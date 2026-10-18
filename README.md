@@ -1,3 +1,5 @@
+![CraftShare — Your PC. Your friends. One shared world.](docs/assets/craftshare-banner.png)
+
 # CraftShare: host a Minecraft server from your PC without port forwarding
 
 [![Latest release](https://img.shields.io/github/v/release/iamhelitha/craftshare)](https://github.com/iamhelitha/craftshare/releases/latest)
@@ -17,6 +19,19 @@ with the latest progress. Everything runs from a simple web dashboard; no comman
 - **Invites, not shared passwords**: each PC makes its own key; the owner sends a single-use invite code.
 - **No installs for friends**: one `.exe`; Minecraft and Java download automatically.
 - Light on the VPS (about 20 MB of RAM) and does not touch other software such as 3x-ui/Xray.
+
+## How it works
+
+![CraftShare architecture: friends connect to the VPS, which forwards play traffic through an SSH reverse tunnel to Minecraft on the host PC. SFTP syncs the shared world. Optional local SOCKS5 proxy routes SSH/SFTP and the Minecraft join helper.](docs/assets/craftshare-how-it-works.png)
+
+Minecraft runs on the **host PC**. Friends connect to **`VPS:25565`**, and the VPS forwards their traffic
+through the SSH reverse tunnel. The app downloads a newer shared world before hosting and uploads the saved
+world after stopping; a VPS lock lets one person host at a time.
+
+For a connection that needs a proxy, set **Setup > Network/proxy** to your local SOCKS5 endpoint
+(for example, v2rayN at `127.0.0.1:10808`). SSH and SFTP then use that proxy. To play through it, connect
+Minecraft to **`localhost:25566`**: the app's join helper routes that connection through SOCKS5 to the VPS.
+Leave the proxy blank for a direct connection. Ports shown in the diagram are the defaults.
 
 ## Download
 
