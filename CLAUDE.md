@@ -66,3 +66,7 @@ A local web app (aiohttp backend + one static page) that downloads, configures a
 
 - Owner connect (`/api/hub/owner`) also makes this PC's own key and registers it through the hub's `/admin/add-key` (owner token = proof, idempotent, name clash -> 409), then fills the sync settings like a join does. An older hub answers 'Not found'; the app tells the owner to run `mc-hub update`. Without this a fresh install had the owner code but no access to the shared storage.
 - Backups page: `/api/backups` also returns `remote_files` (`world.list_remote_worlds`: parses sftp `ls -l`, marks the version in `meta.json` as current). Download copies a version into the local backups folder as `vps-world-N-<time>.zip` (restore from there); Delete removes an old version but never the current one.
+
+## Testing gotcha: never assume port 8765
+
+The manager takes the first free port in 8765-8775, and the owner may already be running the real app on 8765. A test script that hard-codes 8765 then talks to the REAL app (and can overwrite its hub.json/config). Always read the port from the test instance's own `MCMGR_DATA/manager.port` (or check that the page's `app_version`/data dir is the test one) before sending anything.
