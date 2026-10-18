@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/iamhelitha/craftshare/compare/v0.3.2...v0.4.0) (2026-10-18)
+
+
+### Features
+
+* **manager:** owner connect gets its own key, VPS world versions with download/delete, two-column Backups layout ([bab3639](https://github.com/iamhelitha/craftshare/commit/bab3639fbd4915688e8ce5caf416b7bd22df1477))
+
 ## [0.3.2](https://github.com/iamhelitha/craftshare/compare/v0.3.1...v0.3.2) (2026-10-18)
 
 
