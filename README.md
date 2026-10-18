@@ -1,7 +1,14 @@
-# CraftShare (Minecraft Server Manager)
+# CraftShare: host a Minecraft server from your PC without port forwarding
 
-Host a vanilla Minecraft server from your own Windows PC, let friends join through your VPS, and share one
-world so anyone in the group can host when they want: one at a time, with the latest progress.
+[![Latest release](https://img.shields.io/github/v/release/iamhelitha/craftshare)](https://github.com/iamhelitha/craftshare/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/iamhelitha/craftshare/total)](https://github.com/iamhelitha/craftshare/releases)
+[![CI](https://github.com/iamhelitha/craftshare/actions/workflows/ci.yml/badge.svg)](https://github.com/iamhelitha/craftshare/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
+**CraftShare** is a free, open-source **Minecraft Java server manager for Windows**. Host a vanilla Minecraft
+server on your own PC, let friends join through a cheap VPS (no router port forwarding, works behind CGNAT and
+mobile data), and **share one world** so anyone in your group can host when they want: one at a time, always
+with the latest progress. Everything runs from a simple web dashboard; no command line needed.
 
 - **Friendly web page**: start/stop, players and admins, world settings, backups, console. No terminal.
 - **No port forwarding**: an SSH reverse tunnel publishes the server on your VPS (`VPS:25565`).
@@ -60,6 +67,33 @@ apps/hub/       mc-hub, the VPS service for invites
 install.sh      one-line VPS installer
 docs/           setup and architecture notes
 ```
+
+## FAQ
+
+**How do I host a Minecraft server without port forwarding?**
+CraftShare opens an SSH reverse tunnel from your PC to a VPS you rent (1 GB RAM is enough; the VPS does not run
+Minecraft). Friends connect to the VPS address and the traffic is passed to your PC. This also works when your
+ISP uses CGNAT or you are on mobile data.
+
+**Can my friends and I take turns hosting the same world?**
+Yes. The world is stored on the VPS. When you start hosting, CraftShare downloads the latest copy; when you stop,
+it uploads it. A lock with a heartbeat makes sure only one person hosts at a time.
+
+**Do I need to install Java or Python?**
+No. Download the `.exe`. The Minecraft server jar and the right Java version download automatically.
+
+**Which Minecraft versions work?**
+Any vanilla Java Edition release from Mojang's official list, chosen in Setup. Everyone must join with the same version.
+
+**Does it work with cracked / TLauncher players?**
+The server runs with `online-mode=false` so offline launchers can join. Turn on the whitelist if strangers might find your address.
+
+**Is it safe to use on a VPS that already runs other things (for example 3x-ui / Xray)?**
+Yes. The installer only adds two locked-down accounts and a small service, and does not touch other software.
+
+**Where are backups kept?**
+On your PC (automatic at every start, with a size limit) and the last few world versions on the VPS. You can
+restore or import any world `.zip` from the Backups page.
 
 ## License
 
