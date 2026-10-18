@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minecraft Server Manager</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%2357a64a'/><rect x='3' y='4' width='4' height='4' fill='%23243d1f'/><rect x='9' y='4' width='4' height='4' fill='%23243d1f'/><rect x='6' y='8' width='4' height='5' fill='%23243d1f'/></svg>">
+<style>
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --panel-2: #f8f9f6; --text: #1d2219; --muted: #636b5d;
+  --line: #e1e4dc; --accent: #3f8f33; --accent-ink: #ffffff; --accent-soft: #e6f2e2;
+  --warn: #b7791f; --warn-soft: #fbf1df; --danger: #c0392b; --danger-soft: #fbe7e4;
+  --ok: #2f8a3a; --info-soft: #e8eef8; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.05);
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141712; --panel: #1c2019; --panel-2: #22271f; --text: #e8ebe4; --muted: #9aa392;
+    --line: #2e342a; --accent: #5fb352; --accent-ink: #0f140d; --accent-soft: #233322;
+    --warn: #e0a53f; --warn-soft: #3a2f1a; --danger: #e46a5c; --danger-soft: #3d1f1b;
+    --ok: #5fb352; --info-soft: #1f2836; --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+a { color: var(--accent); }
+
+.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+nav { background: var(--panel); border-right: 1px solid var(--line); padding: 20px 12px; position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column; gap: 2px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; padding: 0 10px 18px; }
+.brand .logo { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
+nav a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: var(--text);
+  text-decoration: none; }
+nav a:hover { background: var(--panel-2); }
+nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+nav a svg { width: 18px; height: 18px; flex: none; }
+nav .spacer { flex: 1; }
+nav .mini { font-size: 13px; color: var(--muted); padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+
+main { padding: 28px 32px 60px; max-width: 980px; width: 100%; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 22px; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; box-shadow: var(--shadow); margin-bottom: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.hidden { display: none !important; }
+
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 8px 14px; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+a.btn { color: var(--text); text-decoration: none; }
+.btn:hover { background: var(--panel-2); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.05); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+.btn.ghost-danger { color: var(--danger); }
+.btn.big { padding: 12px 22px; font-size: 16px; border-radius: 10px; }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+
+.hero { display: flex; gap: 20px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.status { display: flex; gap: 16px; align-items: center; }
+.dot { width: 18px; height: 18px; border-radius: 50%; background: var(--muted); flex: none; position: relative; }
+.dot.on { background: var(--ok); box-shadow: 0 0 0 6px var(--accent-soft); }
+.dot.busy { background: var(--warn); animation: pulse 1.2s infinite; }
+.dot.off { background: #9aa0a6; }
+.dot.bad { background: var(--danger); }
+@keyframes pulse { 50% { opacity: .35; } }
+.status .title { font-size: 20px; font-weight: 650; }
+
+.progress { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; margin-top: 12px; }
+.progress > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+.progress.indet > div { width: 30%; animation: slide 1.2s infinite ease-in-out; }
+@keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+
+.banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; display: flex; gap: 10px; align-items: flex-start; }
+#joinHint { display: block; font-size: 13px; }
+.banner.warn { background: var(--warn-soft); }
+.banner.danger { background: var(--danger-soft); }
+.banner.info { background: var(--info-soft); }
+.banner.ok { background: var(--accent-soft); }
+
+.address { font-family: var(--mono); font-size: 18px; background: var(--panel-2); border: 1px solid var(--line);
+  padding: 8px 12px; border-radius: 8px; }
+.stat { font-size: 26px; font-weight: 650; }
+
+.field { display: grid; grid-template-columns: 220px 1fr; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); align-items: center; }
+.field:first-of-type { border-top: 0; }
+.field .label { font-weight: 600; }
+.field .help { font-size: 13px; color: var(--muted); }
+input[type=text], input[type=number], select { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; width: 100%; max-width: 360px; }
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; flex-wrap: wrap; }
+.seg button { border: 0; background: var(--panel); padding: 7px 14px; cursor: pointer; border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; vertical-align: middle; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 12px; cursor: pointer; transition: .2s; }
+.switch span::after { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: .2s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(20px); }
+input[type=range] { width: 100%; max-width: 360px; accent-color: var(--accent); }
+
+.savebar { position: sticky; bottom: 16px; display: flex; gap: 10px; justify-content: flex-end; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); padding: 12px 16px; border-radius: 12px; box-shadow: var(--shadow); }
+
+table { width: 100%; border-collapse: collapse; }
+td, th { text-align: left; padding: 10px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+td .row { flex-wrap: nowrap; }
+th { font-size: 13px; color: var(--muted); font-weight: 600; border-top: 0; }
+.badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); margin-right: 4px; }
+.badge.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.badge.op { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.badge.ban { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+
+.console { background: #0f120e; color: #d6dccf; font: 13px/1.45 var(--mono); border-radius: 10px; padding: 12px;
+  height: 52vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.console .warn { color: #e8c15a; } .console .err { color: #ff8577; } .console .me { color: #7fd36d; }
+
+.drop { border: 2px dashed var(--line); border-radius: 12px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+
+#toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-width: 380px; }
+.toast { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); padding: 10px 14px;
+  border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.15); }
+.toast.error { border-left-color: var(--danger); } .toast.warning { border-left-color: var(--warn); }
+
+dialog { border: 0; border-radius: 14px; padding: 0; background: var(--panel); color: var(--text); max-width: 480px; width: calc(100% - 32px); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog .body { padding: 22px 22px 8px; white-space: pre-line; }
+dialog .actions { padding: 16px 22px 20px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+details summary { cursor: pointer; font-weight: 600; }
+
+@media (max-width: 760px) {
+  .layout { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 10px; }
+  nav .brand, nav .spacer, nav .mini { display: none; }
+  main { padding: 18px 16px 60px; }
+  .grid2, .field { grid-template-columns: 1fr; gap: 8px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <div class="brand"><div class="logo"><svg width="16" height="16" viewBox="0 0 16 16"><rect x="3" y="4" width="4" height="4" fill="#243d1f"/><rect x="9" y="4" width="4" height="4" fill="#243d1f"/><rect x="6" y="8" width="4" height="5" fill="#243d1f"/></svg></div>Server Manager</div>
+    <a href="#home" data-page="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
+    <a href="#players" data-page="players"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M17 11a3 3 0 1 0 0-6M22 21c0-3-2-5-5-5.5"/></svg>Players</a>
+    <a href="#settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg>World settings</a>
+    <a href="#backups" data-page="backups"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8"/><path d="M1 3h22v5H1zM10 12h4"/></svg>Backups</a>
+    <a href="#console" data-page="console"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 9l3 3-3 3M12 15h6"/></svg>Console</a>
+    <a href="#setup" data-page="setup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Setup</a>
+    <div class="spacer"></div>
+    <div class="mini"><span class="dot off" id="navDot" style="width:10px;height:10px"></span><span id="navStatus">Offline</span></div>
+    <a href="#" id="shutdownLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10M5.6 6.6a9 9 0 1 0 12.8 0"/></svg>Shut down</a>
+  </nav>
+
+  <main>
+    <!-- HOME -->
+    <section id="page-home">
+      <h1>Home</h1>
+      <p class="sub">Start the server here. Friends join with the address below.</p>
+
+      <div class="card" id="setupCard">
+        <h2>Before your first start</h2>
+        <div class="field">
+          <div><div class="label">Your name</div><div class="help">Shown to your friends while you are hosting.</div></div>
+          <input type="text" id="homeName" maxlength="24" placeholder="e.g. Alex">
+        </div>
+        <div class="field">
+          <div><div class="label">Minecraft EULA</div><div class="help">Required by Mojang to run a server.</div></div>
+          <label class="row"><span class="switch"><input type="checkbox" id="homeEula"><span></span></span>
+            I agree to the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hero">
+          <div class="status">
+            <div class="dot off" id="bigDot"></div>
+            <div><div class="title" id="statusTitle">Server is offline</div>
+              <div class="muted" id="statusSub">Nobody is hosting.</div></div>
+          </div>
+          <div class="row">
+            <button class="btn ghost-danger hidden" id="btnTakeover">Take over</button>
+            <button class="btn hidden" id="btnRetry">Retry upload</button>
+            <button class="btn primary big" id="btnHost">Start server</button>
+          </div>
+        </div>
+        <div id="busyBox" class="hidden">
+          <div class="small muted" id="busyText" style="margin-top:14px"></div>
+          <div class="progress" id="busyBar"><div></div></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Join address</h2>
+          <div class="row"><span class="address" id="joinAddr">not set up</span>
+            <button class="btn sm" id="btnCopy">Copy</button></div>
+          <p class="small muted" style="margin-bottom:0">In Minecraft: Multiplayer &rarr; Add Server &rarr; paste this address.</p>
+          <div class="banner info hidden" id="joinHint" style="margin:12px 0 0"></div>
+        </div>
+        <div class="card">
+          <h2>Players online</h2>
+          <div class="stat" id="onlineCount">0</div>
+          <div class="small muted" id="onlineNames">Nobody is online.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PLAYERS -->
+    <section id="page-players" class="hidden">
+      <h1>Players</h1>
+      <p class="sub">Give powers, change game modes, kick or ban. Needs the server to be running.</p>
+      <div class="card">
+        <h2>Add or find a player</h2>
+        <div class="row">
+          <input type="text" id="newPlayer" placeholder="Player name" maxlength="16" style="max-width:220px">
+          <button class="btn" data-padd="wl_add">Add to whitelist</button>
+          <button class="btn" data-padd="op">Make admin (OP)</button>
+          <button class="btn" data-padd="pardon">Unban</button>
+        </div>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th>Player</th><th>Status</th><th>Game mode</th><th style="text-align:right">Actions</th></tr></thead>
+          <tbody id="playerRows"></tbody>
+        </table>
+        <p class="muted small" id="playersEmpty">No players yet. They appear here once they join, or when you add them above.</p>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="page-settings" class="hidden">
+      <h1>World settings</h1>
+      <p class="sub">Changes apply the next time the server starts.</p>
+      <div id="settingsGroups"></div>
+      <div class="savebar">
+        <span class="small muted" id="settingsState">No changes</span>
+        <button class="btn" id="btnSettingsReset">Undo changes</button>
+        <button class="btn primary" id="btnSettingsSave" disabled>Save</button>
+      </div>
+    </section>
+
+    <!-- BACKUPS -->
+    <section id="page-backups" class="hidden">
+      <h1>Backups</h1>
+      <p class="sub">A backup is made automatically every time the server starts. Each one holds the whole world, every player's inventory, stats and progress, and the admin, whitelist and ban lists.</p>
+      <div class="card">
+        <h2>Storage</h2>
+        <div class="row" style="gap:18px">
+          <div><div class="stat" id="bkUsed">0 MB</div><div class="small muted" id="bkLimitText"></div></div>
+          <div class="progress" id="bkBar" style="flex:1;min-width:160px;max-width:420px;margin-top:0"><div></div></div>
+        </div>
+        <div class="field" style="margin-top:8px">
+          <div><div class="label">Automatic backups to keep</div><div class="help">One is made every time the server starts.</div></div>
+          <select id="bkKeep" style="max-width:160px"><option>3</option><option>5</option><option>10</option><option>20</option><option>50</option></select>
+        </div>
+        <div class="field">
+          <div><div class="label">Space limit</div><div class="help">When backups use more than this, the oldest automatic ones are deleted.</div></div>
+          <select id="bkMax" style="max-width:160px"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option><option value="50">50 GB</option></select>
+        </div>
+        <p class="small muted" style="margin:6px 0 0">Backups you make with "Back up now" are never deleted automatically. Identical copies are skipped.</p>
+      </div>
+      <div class="card" id="sharedCard">
+        <h2>Shared world</h2>
+        <div id="sharedInfo" class="muted">Loading...</div>
+      </div>
+      <div class="card">
+        <div class="row spread" style="margin-bottom:12px">
+          <h2 style="margin:0">Backups on this PC</h2>
+          <div class="row">
+            <button class="btn" id="btnOpenBackups">Open folder</button>
+            <button class="btn primary" id="btnBackupNow">Back up now</button>
+          </div>
+        </div>
+        <table><thead><tr><th>When</th><th>Type</th><th>Size</th><th style="text-align:right">Actions</th></tr></thead>
+          <tbody id="backupRows"></tbody></table>
+        <p class="muted small" id="backupsEmpty">No backups yet.</p>
+      </div>
+      <div class="card">
+        <h2>Restore a world from a file</h2>
+        <div class="drop" id="dropZone">Drop a world <b>.zip</b> here, or click to choose one.<br>
+          <span class="small">Any zip that contains a <code>level.dat</code> works. Your current world is backed up first.</span></div>
+        <input type="file" id="fileInput" accept=".zip" class="hidden">
+      </div>
+    </section>
+
+    <!-- CONSOLE -->
+    <section id="page-console" class="hidden">
+      <h1>Console</h1>
+      <p class="sub">What the server is saying. Type commands without the slash.</p>
+      <div class="card">
+        <div class="console" id="console"></div>
+        <div class="row" style="margin-top:12px">
+          <input type="text" id="cmdInput" placeholder="Command, e.g. time set day" style="max-width:none;flex:1">
+          <button class="btn primary" id="btnCmd">Run</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input type="text" id="chatInput" placeholder="Say something to everyone in the game" style="max-width:none;flex:1">
+          <button class="btn" id="btnChat">Send chat</button>
+        </div>
+        <div class="row small" style="margin-top:12px">
+          <span class="muted">Quick:</span>
+          <button class="btn sm" data-cmd="time set day">Make it day</button>
+          <button class="btn sm" data-cmd="weather clear">Clear weather</button>
+          <button class="btn sm" data-cmd="effect give @a minecraft:instant_health 1 10">Heal everyone</button>
+          <button class="btn sm" data-cmd="save-all">Save now</button>
+          <button class="btn sm" id="btnRestart">Restart server</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETUP -->
+    <section id="page-setup" class="hidden">
+      <h1>Setup</h1>
+      <p class="sub">Usually you only need this once.</p>
+      <div class="card">
+        <h2>You</h2>
+        <div class="field">
+          <div><div class="label">Your name</div><div class="help">Shown to others while you host.</div></div>
+          <input type="text" id="cfg-player_name" maxlength="24">
+        </div>
+        <div class="field">
+          <div><div class="label">Shared world</div><div class="help">Keep the world on the VPS so whoever hosts gets the latest progress, and only one person can host at a time.</div></div>
+          <label class="switch"><input type="checkbox" id="cfg-sync_enabled"><span></span></label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Minecraft</h2>
+        <div class="field">
+          <div><div class="label">Version</div><div class="help" id="jarInfo">Everyone must use the same version.</div></div>
+          <div class="row"><select id="versionSelect" style="max-width:220px"><option>Loading...</option></select>
+            <button class="btn" id="btnInstallVersion">Install this version</button></div>
+        </div>
+        <div class="field">
+          <div><div class="label">Memory</div><div class="help">How much RAM the server may use. 4 GB is plenty for a few friends.</div></div>
+          <div><input type="range" id="ramSlider" min="1" max="16" step="1"><div class="small" id="ramLabel"></div></div>
+        </div>
+        <div class="field">
+          <div><div class="label">Java</div><div class="help" id="javaInfo">Checking...</div></div>
+          <div class="row"><button class="btn" id="btnJava">Install Java automatically</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Network</h2>
+        <div class="field">
+          <div><div class="label">Proxy</div><div class="help">Only if your normal connection is slow but a VPN/proxy app (like v2rayN) is fast. Server traffic to the VPS then goes through it. Leave empty otherwise.</div></div>
+          <div><input type="text" id="cfg-proxy" placeholder="e.g. 127.0.0.1:10808">
+            <div class="small" id="proxyDetect" style="margin-top:6px"></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <details>
+          <summary>Connection to the VPS (advanced)</summary>
+          <p class="small muted">Already filled in for you. Only change these if you know you need to.</p>
+          <div id="connFields"></div>
+          <h2 style="margin-top:18px">Tunnel log</h2>
+          <div class="console" id="tconsole" style="height:22vh"></div>
+        </details>
+      </div>
+      <div class="savebar">
+        <span class="small muted">Data folder: <span id="dataDir"></span></span>
+        <button class="btn" id="btnOpenData">Open</button>
+        <button class="btn primary" id="btnSetupSave">Save</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toasts"></div>
+<dialog id="dlg"><div class="body" id="dlgText"></div><div class="actions" id="dlgActions"></div></dialog>
+
+<script>
+const TOKEN = "__TOKEN__";
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let S = {};                 // last /api/state
+const seq = { log: 0, tlog: 0, note: 0 };
+let firstNotes = true;
+
+async function api(path, data, opts = {}) {
+  const r = await fetch("/api/" + path, {
+    method: data === undefined && !opts.raw ? "GET" : "POST",
+    headers: opts.raw ? { "X-Token": TOKEN } : { "X-Token": TOKEN, "Content-Type": "application/json" },
+    body: opts.raw ? opts.raw : (data === undefined ? undefined : JSON.stringify(data)),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (j.ok === false) { toast(j.error, "error"); throw new Error(j.error); }
+  return j;
+}
+
+function toast(text, level = "info") {
+  const t = document.createElement("div");
+  t.className = "toast " + level; t.textContent = text;
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), level === "error" ? 12000 : 6000);
+}
+
+function ask(text, options, dangerIndex = -1) {
+  return new Promise(res => {
+    const d = $("#dlg"); $("#dlgText").textContent = text;
+    const box = $("#dlgActions"); box.innerHTML = "";
+    options.forEach((o, i) => {
+      const b = document.createElement("button");
+      b.className = "btn " + (i === 0 ? (i === dangerIndex ? "danger" : "primary") : "");
+      b.textContent = o; b.onclick = () => { d.close(); res(o); };
+      box.appendChild(b);
+    });
+    d.onclose = () => res(d.returnValue || null);
+    d.showModal();
+  });
+}
+const confirmDo = async (text, yes, danger = false) => (await ask(text, [yes, "Cancel"], danger ? 0 : -1)) === yes;
+
+const fmtTime = ts => ts ? new Date(ts * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "?";
+const fmtSize = b => b > 1e9 ? (b / 1e9).toFixed(1) + " GB" : b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB";
+function since(ts) {
+  const m = Math.round((Date.now() / 1000 - ts) / 60);
+  return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : fmtTime(ts);
+}
+
+/* ---------------- navigation ---------------- */
+const loaders = {};
+function show(page) {
+  if (!$("#page-" + page)) page = "home";
+  $$("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "page-" + page));
+  $$("nav a[data-page]").forEach(a => a.classList.toggle("active", a.dataset.page === page));
+  if (loaders[page]) loaders[page]();
+}
+window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+
+/* ---------------- polling ---------------- */
+let questionShown = null;
+async function poll() {
+  try {
+    S = await api(`state?log=${seq.log}&tlog=${seq.tlog}&note=${seq.note}`);
+    seq.log = S.log_seq; seq.tlog = S.tlog_seq;
+    appendLog("#console", S.log); appendLog("#tconsole", S.tlog);
+    if (!firstNotes) S.notes.forEach(n => { const [lvl, ...t] = n.split("|"); toast(t.join("|"), lvl); });
+    firstNotes = false; seq.note = S.note_seq;
+    renderHome();
+    if (S.question && questionShown !== S.question.id) {
+      questionShown = S.question.id;
+      const q = S.question;
+      ask(q.text, q.options).then(v => api("answer", { id: q.id, value: v || q.options[q.options.length - 1] }));
+    }
+  } catch (e) {
+    $("#statusTitle").textContent = "Lost connection to the manager";
+    $("#statusSub").textContent = "Is the black window still open? Start it again with start.bat.";
+    setDot("bad");
+  }
+  setTimeout(poll, 1000);
+}
+
+function appendLog(sel, lines) {
+  if (!lines || !lines.length) return;
+  const el = $(sel); const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  const frag = document.createDocumentFragment();
+  for (const l of lines) {
+    const d = document.createElement("div"); d.textContent = l;
+    if (/\/WARN\]/.test(l)) d.className = "warn";
+    else if (/\/ERROR\]|Exception/.test(l)) d.className = "err";
+    else if (l.startsWith("> ")) d.className = "me";
+    frag.appendChild(d);
+  }
+  el.appendChild(frag);
+  while (el.childNodes.length > 3000) el.removeChild(el.firstChild);
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+function setDot(kind) {
+  $("#bigDot").className = "dot " + kind;
+  $("#navDot").className = "dot " + kind;
+}
+
+/* ---------------- home ---------------- */
+function renderHome() {
+  const hs = S.host_status, srv = S.server;
+  let title, sub, dot, btn = "Start server", btnKind = "primary", btnDisabled = false, mode = "start";
+  const other = hs && hs.state === "running" && !S.hosting;
+  if (srv === "online") {
+    title = "Server is online"; dot = "on";
+    sub = S.ready ? "Friends can join now." + (S.hosting && S.sync ? " Others cannot start the server." : "")
+                  : "Running on this PC. Opening the connection for friends...";
+  }
+  else if (srv === "starting") { title = "Server is starting..."; dot = "busy"; sub = "This takes about a minute."; }
+  else if (srv === "stopping") { title = "Saving and stopping..."; dot = "busy"; sub = "Please wait."; }
+  else if (other && S.ready) { title = "Server is online"; dot = "on"; sub = `Hosted by ${hs.holder} since ${since(hs.since)}. Just join with the address below.`; }
+  else if (other) { title = "Server is starting..."; dot = "busy"; sub = `${hs.holder} is starting the server. You can join in about a minute, when this turns green.`; }
+  else if (hs && hs.state === "stale") { title = "The host stopped responding"; dot = "bad"; sub = `${hs.holder} was hosting but their PC stopped answering.`; }
+  else if (hs && hs.state === "error") { title = "Can't reach the shared world"; dot = "bad"; sub = hs.msg; }
+  else { title = "Server is offline"; dot = "off"; sub = S.sync ? "Nobody is hosting. You can start it." : "Press Start to run the server on this PC."; }
+  if (hs && hs.state === "free" && hs.port_open && !S.hosting && srv === "stopped") {
+    title = "Something is already using the server port"; dot = "bad";
+    sub = "Someone may be running the server without the shared world. Starting is blocked."; btnDisabled = true;
+  }
+  if (S.hosting || srv !== "stopped") { btn = "Stop server"; btnKind = "danger"; mode = "stop"; }
+  if (other || (hs && (hs.state === "stale" || hs.state === "error"))) btnDisabled = true;
+  if (srv === "stopping") btnDisabled = true;
+  if (S.busy) btnDisabled = true;
+  if (mode === "start" && (!S.eula || (S.sync && !S.name))) btnDisabled = true;
+
+  $("#statusTitle").textContent = title; $("#statusSub").textContent = sub; setDot(dot);
+  $("#navStatus").textContent = (srv === "online" || other) && S.ready ? "Online" : srv === "stopped" && !other ? "Offline" : "Working...";
+  const b = $("#btnHost"); b.textContent = btn; b.className = "btn big " + btnKind; b.disabled = btnDisabled; b.dataset.mode = mode;
+  $("#btnTakeover").classList.toggle("hidden", !(hs && hs.state === "stale" && !S.hosting));
+  $("#btnRetry").classList.toggle("hidden", !S.pending_upload);
+
+  const busy = S.busy || S.step;
+  $("#busyBox").classList.toggle("hidden", !busy);
+  $("#busyText").textContent = S.step || S.busy || "";
+  $("#busyBar").classList.toggle("indet", S.progress == null);
+  $("#busyBar > div").style.width = S.progress == null ? "" : S.progress + "%";
+
+  $("#joinAddr").textContent = S.address || "not set up";
+  const hint = $("#joinHint");
+  if (S.hosting || srv !== "stopped") {
+    hint.innerHTML = 'You are hosting: on <b>this PC</b> join <code>localhost</code> (fastest). Friends use the address above.';
+    hint.classList.remove("hidden");
+  } else if (S.join_proxy) {
+    hint.innerHTML = `Playing on <b>this PC</b>? Join <code>${S.join_proxy}</code> instead. It is the same server, but goes through your proxy, which is much faster on your connection.`;
+    hint.classList.remove("hidden");
+  } else hint.classList.add("hidden");
+  $("#onlineCount").textContent = S.online.length;
+  $("#onlineNames").textContent = S.online.length ? S.online.join(", ") : (srv === "online" ? "Nobody is online yet." : "The server is not running here.");
+
+  const needSetup = !S.eula || (S.sync && !S.name);
+  $("#setupCard").classList.toggle("hidden", !needSetup);
+  if (document.activeElement !== $("#homeName")) $("#homeName").value = S.name || "";
+  $("#homeEula").checked = S.eula;
+}
+
+$("#btnHost").onclick = async () => {
+  if ($("#btnHost").dataset.mode === "stop") {
+    if (!await confirmDo("Stop the server? Players will be disconnected and the world will be saved" +
+        (S.sync ? " and uploaded to the shared storage." : "."), "Stop server", true)) return;
+    api("host/stop", {});
+  } else api("host/start", {});
+};
+$("#btnRetry").onclick = () => api("host/retry", {});
+$("#btnTakeover").onclick = async () => {
+  if (await confirmDo("The host's PC stopped answering. If you take over, anything they did not upload is lost — you will get the last saved shared world.", "Take over", true))
+    api("host/takeover", {});
+};
+$("#btnCopy").onclick = () => { navigator.clipboard.writeText($("#joinAddr").textContent); toast("Address copied"); };
+let nameTimer;
+$("#homeName").oninput = e => { clearTimeout(nameTimer); nameTimer = setTimeout(() => api("config", { player_name: e.target.value }), 500); };
+$("#homeEula").onchange = e => api("config", { eula: e.target.checked });
+
+/* ---------------- players ---------------- */
+async function loadPlayers() {
+  const { players } = await api("players");
+  const tb = $("#playerRows"); tb.innerHTML = "";
+  $("#playersEmpty").classList.toggle("hidden", players.length > 0);
+  for (const p of players) {
+    const tr = document.createElement("tr");
+    const badges = [p.online ? '<span class="badge on">Online</span>' : '<span class="badge">Offline</span>',
+      p.op ? '<span class="badge op">Admin</span>' : "", p.whitelisted ? '<span class="badge">Whitelisted</span>' : "",
+      p.banned ? '<span class="badge ban">Banned</span>' : ""].join("");
+    tr.innerHTML = `<td><b></b></td><td>${badges}</td>
+      <td><select class="gm" style="max-width:140px"><option value="">Change...</option><option>survival</option><option>creative</option><option>adventure</option><option>spectator</option></select></td>
+      <td style="text-align:right"><div class="row" style="justify-content:flex-end"></div></td>`;
+    tr.querySelector("b").textContent = p.name;
+    const acts = tr.querySelector(".row");
+    const add = (label, action, cls = "") => { const b = document.createElement("button"); b.className = "btn sm " + cls; b.textContent = label;
+      b.onclick = () => playerAction(p.name, action); acts.appendChild(b); };
+    add(p.op ? "Remove admin" : "Make admin", p.op ? "deop" : "op");
+    if (p.online) { add("Heal", "heal"); add("Kick", "kick"); }
+    add(p.banned ? "Unban" : "Ban", p.banned ? "pardon" : "ban", p.banned ? "" : "ghost-danger");
+    tr.querySelector(".gm").onchange = e => { if (e.target.value) playerAction(p.name, "gamemode", e.target.value); e.target.value = ""; };
+    tb.appendChild(tr);
+  }
+}
+async function playerAction(name, action, mode) {
+  if (action === "ban" && !await confirmDo(`Ban ${name}? They will not be able to join until you unban them.`, "Ban", true)) return;
+  if (action === "op" && !await confirmDo(`Make ${name} an admin? Admins can use every command, including banning people and changing the world.`, "Make admin")) return;
+  await api("players/action", { name, action, mode });
+  toast("Done"); setTimeout(loadPlayers, 1200);
+}
+$$("[data-padd]").forEach(b => b.onclick = () => {
+  const n = $("#newPlayer").value.trim(); if (!n) return toast("Type a player name first", "warning");
+  playerAction(n, b.dataset.padd);
+});
+loaders.players = loadPlayers;
+setInterval(() => { if (location.hash === "#players") loadPlayers(); }, 4000);
+
+/* ---------------- world settings ---------------- */
+let fields = [], edits = {};
+async function loadSettings() {
+  const r = await api("settings"); fields = r.fields; edits = {};
+  const groups = {}; fields.forEach(f => (groups[f.group] = groups[f.group] || []).push(f));
+  const root = $("#settingsGroups"); root.innerHTML = "";
+  for (const [g, fs] of Object.entries(groups)) {
+    const card = document.createElement("div"); card.className = "card";
+    card.innerHTML = `<h2>${g}</h2>`;
+    for (const f of fs) {
+      const row = document.createElement("div"); row.className = "field";
+      row.innerHTML = `<div><div class="label"></div><div class="help"></div></div><div class="ctl"></div>`;
+      row.querySelector(".label").textContent = f.label; row.querySelector(".help").textContent = f.help;
+      row.querySelector(".ctl").appendChild(control(f));
+      card.appendChild(row);
+    }
+    root.appendChild(card);
+  }
+  settingsDirty();
+}
+function control(f) {
+  const set = v => { edits[f.key] = v; settingsDirty(); };
+  if (f.kind === "choice") {
+    const seg = document.createElement("div"); seg.className = "seg";
+    f.options.forEach(o => { const b = document.createElement("button"); b.textContent = o[0].toUpperCase() + o.slice(1);
+      b.classList.toggle("on", o === f.value);
+      b.onclick = () => { seg.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on"); set(o); };
+      seg.appendChild(b); });
+    return seg;
+  }
+  if (f.kind === "toggle") {
+    const l = document.createElement("label"); l.className = "switch";
+    l.innerHTML = '<input type="checkbox"><span></span>';
+    const i = l.querySelector("input"); i.checked = f.value === "true"; i.onchange = () => set(i.checked ? "true" : "false");
+    return l;
+  }
+  const i = document.createElement("input"); i.type = f.kind === "int" ? "number" : "text"; i.value = f.value;
+  if (f.kind === "int") i.min = 1;
+  i.oninput = () => set(i.value);
+  return i;
+}
+function settingsDirty() {
+  const n = Object.keys(edits).length;
+  $("#settingsState").textContent = n ? `${n} unsaved change${n > 1 ? "s" : ""}` : "No changes";
+  $("#btnSettingsSave").disabled = !n;
+}
+$("#btnSettingsReset").onclick = loadSettings;
+$("#btnSettingsSave").onclick = async () => {
+  const r = await api("settings", edits);
+  edits = {}; settingsDirty();
+  if (r.restart_needed) {
+    if (await confirmDo("Saved. Restart the server now so the changes take effect? Players will be disconnected for a minute.", "Restart now"))
+      api("server/restart", {});
+  } else toast("Saved", "success");
+};
+loaders.settings = loadSettings;
+
+/* ---------------- backups ---------------- */
+async function loadBackups() {
+  const r = await api("backups");
+  const tb = $("#backupRows"); tb.innerHTML = "";
+  $("#backupsEmpty").classList.toggle("hidden", r.backups.length > 0);
+  for (const b of r.backups) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td></td><td class="muted"></td><td class="muted"></td><td style="text-align:right"><div class="row" style="justify-content:flex-end">
+      <a class="btn sm" download>Download</a><button class="btn sm restore">Restore</button><button class="btn sm ghost-danger del">Delete</button></div></td>`;
+    tr.children[0].textContent = fmtTime(b.time); tr.children[1].textContent = b.kind; tr.children[2].textContent = fmtSize(b.size);
+    tr.querySelector("a").href = `/api/backups/file/${encodeURIComponent(b.name)}?token=${TOKEN}`;
+    tr.querySelector(".del").onclick = async () => {
+      if (await confirmDo(`Delete the backup from ${fmtTime(b.time)} (${fmtSize(b.size)})? This cannot be undone.`, "Delete", true))
+        { await api("backups/delete", { name: b.name }); loadBackups(); }
+    };
+    tr.querySelector(".restore").onclick = async () => {
+      if (r.running || S.hosting) return toast("Stop the server first", "warning");
+      if (await confirmDo(`Restore the world from ${fmtTime(b.time)}? Your current world is backed up first, so you can undo this.`, "Restore"))
+        { await api("backups/restore", { name: b.name }); setTimeout(loadBackups, 2000); }
+    };
+    tb.appendChild(tr);
+  }
+  const maxBytes = parseFloat(r.max_gb) * 1024 ** 3;
+  $("#bkUsed").textContent = fmtSize(r.total);
+  $("#bkLimitText").textContent = `used of ${r.max_gb} GB limit · ${r.backups.length} backup${r.backups.length === 1 ? "" : "s"}`;
+  $("#bkBar > div").style.width = Math.min(100, r.total / maxBytes * 100) + "%";
+  setSelect("#bkKeep", r.keep); setSelect("#bkMax", String(parseFloat(r.max_gb)));
+  const si = $("#sharedInfo"), rem = r.remote;
+  $("#sharedCard").classList.toggle("hidden", !S.sync);
+  if (!rem) si.textContent = "";
+  else if (rem.error) si.textContent = "Can't reach the shared storage: " + rem.error;
+  else if (!rem.exists) si.textContent = "No shared world yet. The first time someone stops hosting, their world is saved here.";
+  else si.innerHTML = `Latest: <b>version ${rem.remote_version}</b>, saved by <b></b> ${since(rem.time)}.<br>
+     <span class="small">This PC has version ${rem.local_version || "none"}${rem.newer ? " — you will be offered the newer one when you start." : " — up to date."}</span>`,
+    si.querySelector("b:nth-of-type(2)").textContent = rem.by;
+}
+function setSelect(sel, v) {
+  const s = $(sel);
+  if (![...s.options].some(o => o.value === v)) { const o = document.createElement("option"); o.value = v; o.textContent = sel === "#bkMax" ? v + " GB" : v; s.appendChild(o); }
+  s.value = v;
+}
+async function saveRetention() {
+  const r = await api("backups/retention", { backup_keep: $("#bkKeep").value, backup_max_gb: $("#bkMax").value });
+  toast(r.deleted ? `Saved. ${r.deleted} old backup${r.deleted > 1 ? "s were" : " was"} removed to fit.` : "Saved", "success");
+  loadBackups();
+}
+$("#bkKeep").onchange = saveRetention;
+$("#bkMax").onchange = saveRetention;
+$("#btnBackupNow").onclick =async () => { await api("backups/create", {}); setTimeout(loadBackups, 2500); };
+$("#btnOpenBackups").onclick = () => api("open-folder", { which: "backups" });
+const dz = $("#dropZone"), fi = $("#fileInput");
+dz.onclick = () => fi.click();
+dz.ondragover = e => { e.preventDefault(); dz.classList.add("over"); };
+dz.ondragleave = () => dz.classList.remove("over");
+dz.ondrop = e => { e.preventDefault(); dz.classList.remove("over"); if (e.dataTransfer.files[0]) uploadWorld(e.dataTransfer.files[0]); };
+fi.onchange = () => { if (fi.files[0]) uploadWorld(fi.files[0]); fi.value = ""; };
+async function uploadWorld(file) {
+  if (S.server !== "stopped" || S.hosting) return toast("Stop the server first", "warning");
+  if (!file.name.toLowerCase().endsWith(".zip")) return toast("Please choose a .zip file", "warning");
+  if (!await confirmDo(`Replace the current world with "${file.name}"? Your current world is backed up first.`, "Replace world")) return;
+  toast("Uploading " + file.name + "...");
+  await api("backups/upload", undefined, { raw: file });
+  setTimeout(loadBackups, 3000);
+}
+loaders.backups = loadBackups;
+
+/* ---------------- console ---------------- */
+async function runCmd(cmd, chat = false) {
+  if (!cmd.trim()) return;
+  await api("command", { cmd, chat });
+}
+$("#btnCmd").onclick = () => { runCmd($("#cmdInput").value); $("#cmdInput").value = ""; };
+$("#cmdInput").onkeydown = e => { if (e.key === "Enter") $("#btnCmd").click(); };
+$("#btnChat").onclick = () => { runCmd($("#chatInput").value, true); $("#chatInput").value = ""; };
+$("#chatInput").onkeydown = e => { if (e.key === "Enter") $("#btnChat").click(); };
+$$("[data-cmd]").forEach(b => b.onclick = () => runCmd(b.dataset.cmd));
+$("#btnRestart").onclick = async () => { if (await confirmDo("Restart the server? Players will be disconnected for about a minute.", "Restart")) api("server/restart", {}); };
+loaders.console = () => { const c = $("#console"); c.scrollTop = c.scrollHeight; };
+
+/* ---------------- setup ---------------- */
+const CONN = [["ssh_host", "VPS address"], ["ssh_port", "SSH port"], ["ssh_user", "Tunnel user"], ["ssh_key", "Tunnel key file"],
+  ["ssh_remote_port", "Public Minecraft port"], ["ssh_bind", "Bind address"], ["sync_user", "Shared-world user"], ["sync_key", "Shared-world key file"]];
+let cfg = {};
+async function loadSetup() {
+  cfg = await api("config");
+  $("#cfg-player_name").value = cfg.player_name; $("#cfg-sync_enabled").checked = cfg.sync_enabled;
+  const gb = parseInt(cfg.ram_max) / (cfg.ram_max.endsWith("M") ? 1024 : 1);
+  $("#ramSlider").value = Math.max(1, Math.round(gb)); ramLabel();
+  $("#dataDir").textContent = cfg.data_dir;
+  $("#cfg-proxy").value = cfg.proxy || "";
+  const pd = $("#proxyDetect"); pd.innerHTML = "";
+  if (cfg.windows_proxy && cfg.windows_proxy !== cfg.proxy) {
+    pd.innerHTML = `<span class="muted">Windows is using a proxy: <code></code></span> <button class="btn sm">Use it</button>`;
+    pd.querySelector("code").textContent = cfg.windows_proxy;
+    pd.querySelector("button").onclick = () => { $("#cfg-proxy").value = cfg.windows_proxy; toast("Press Save to apply"); };
+  } else if (cfg.proxy) pd.innerHTML = '<span class="muted">In use. Players on this PC join through localhost:25566 (shown on Home).</span>';
+  $("#jarInfo").textContent = cfg.jar ? `Installed: ${cfg.version || "unknown"}. Everyone must use the same version.` : "Not installed yet — it downloads automatically when you start.";
+  $("#javaInfo").innerHTML = cfg.java_ok ? `Java ${cfg.java_major} found ✓` :
+    cfg.java_major ? `Java ${cfg.java_major} is too old (needs ${cfg.java_required}+). Install it automatically:` : "Java not found. It installs automatically when you start, or click:";
+  const cf = $("#connFields"); cf.innerHTML = "";
+  for (const [k, label] of CONN) {
+    const row = document.createElement("div"); row.className = "field";
+    row.innerHTML = `<div class="label"></div><input type="text">`;
+    row.querySelector(".label").textContent = label;
+    const i = row.querySelector("input"); i.id = "cfg-" + k; i.value = cfg[k] || "";
+    cf.appendChild(row);
+  }
+  try {
+    const v = await api("versions"); const sel = $("#versionSelect"); sel.innerHTML = "";
+    for (const ver of v.versions) { const o = document.createElement("option"); o.value = ver;
+      o.textContent = ver + (ver === v.latest ? " (latest)" : "") + (ver === cfg.version ? " — installed" : ""); sel.appendChild(o); }
+    sel.value = cfg.version || v.latest;
+  } catch (e) { $("#versionSelect").innerHTML = "<option>Offline</option>"; }
+}
+function ramLabel() { $("#ramLabel").textContent = $("#ramSlider").value + " GB"; }
+$("#ramSlider").oninput = ramLabel;
+$("#btnSetupSave").onclick = async () => {
+  const gb = $("#ramSlider").value;
+  const data = { player_name: $("#cfg-player_name").value, sync_enabled: $("#cfg-sync_enabled").checked,
+    ram_max: gb + "G", ram_min: Math.min(gb, 2) + "G", proxy: $("#cfg-proxy").value.trim() };
+  for (const [k] of CONN) data[k] = $("#cfg-" + k).value;
+  await api("config", data); toast("Saved", "success"); loadSetup();
+};
+$("#btnInstallVersion").onclick = async () => {
+  const v = $("#versionSelect").value;
+  if (cfg.version && v !== cfg.version && !await confirmDo(`Switch from ${cfg.version} to ${v}? Everyone who hosts and joins must use ${v} too. Worlds can move to newer versions but not back.`, "Switch version")) return;
+  await api("minecraft/download", { version: v }); location.hash = "#home";
+};
+$("#btnJava").onclick = async () => { await api("java/install", {}); location.hash = "#home"; };
+$("#btnOpenData").onclick = () => api("open-folder", {});
+loaders.setup = loadSetup;
+
+$("#shutdownLink").onclick = async e => {
+  e.preventDefault();
+  const running = S.server !== "stopped" || S.hosting;
+  if (!await confirmDo(running ? "Shut down? The server is stopped and the world is saved" + (S.sync ? " and uploaded" : "") + " first." : "Close the Server Manager?", "Shut down", true)) return;
+  await api("shutdown", {});
+  document.body.innerHTML = '<main style="padding:40px"><h1>Shutting down</h1><p class="sub">The world is being saved. The black window closes by itself when it is done. You can close this tab.</p></main>';
+};
+
+show(location.hash.slice(1) || "home");
+poll();
+</script>
+</body>
+</html>

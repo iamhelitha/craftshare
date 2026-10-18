@@ -1,0 +1,28 @@
+# --- secrets: never commit ---
+keys/
+.keys/
+*.pem
+*.key
+id_*
+friend_tunnel*
+sync_key*
+.env
+.env.*
+!.env.example
+defaults.json
+manager_config.json
+sync_state.json
+
+# --- runtime data ---
+server/
+backups/
+manager.log
+manager.port
+*.zip
+
+# --- build / python ---
+__pycache__/
+.venv/
+build/
+dist/
+*.spec
