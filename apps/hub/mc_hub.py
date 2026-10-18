@@ -9,6 +9,7 @@ Commands (as root; after install, `mc-hub <command>` works from anywhere):
   mc-hub remove-legacy       remove the old shared keys from the first setup
   mc-hub owner-code          make a new owner code (the old one stops working)
   mc-hub logs                recent service log
+  mc-hub require-app [X.Y.Z|off]  minimum desktop app version allowed to host
   mc-hub update [vX.Y.Z]     update to the latest (or a given) release; checksum-verified, rolls back on failure
   mc-hub uninstall           remove everything, after offering a download of the world backup
   python3 mc_hub.py install [--firewall | --no-firewall]    first-time setup (install.sh runs this)
@@ -677,6 +678,8 @@ def cmd_status(_args) -> None:
             say("[bold]Hosting now:[/] someone (lock present)")
     else:
         say("[bold]Hosting now:[/] nobody")
+    need = read_policy().get("min_app")
+    say(f"[bold]App version needed to host:[/] {need} or newer" if need else "[bold]App version needed to host:[/] any")
 
     sec = [f"Failed attempts (15 min)     {rt.get('failed_15min', 0)}",
            f"Wrong invite codes (1 hour)  {rt.get('invite_guesses_hour', 0)}",
@@ -750,6 +753,39 @@ def cmd_owner_code(_args) -> None:
         save(st)
     panel("Owner code (keep it private)", [f"[bold green]{text}[/]", "",
           "Paste it in the app: Setup > Friends & access > I own the VPS."])
+
+
+POLICY = WORLD_DIR / "policy.json"
+
+
+def read_policy() -> dict:
+    try:
+        return json.loads(POLICY.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def cmd_require_app(args) -> None:
+    """Minimum desktop app version allowed to host (older apps are asked to update first)."""
+    require_root()
+    if not args:
+        cur = read_policy().get("min_app")
+        say(f"Hosting requires app version {cur} or newer." if cur else "Any app version may host.")
+        say("Change it with:  mc-hub require-app 0.4.0    or    mc-hub require-app off")
+        return
+    if args[0] == "off":
+        POLICY.unlink(missing_ok=True)
+        say("[green]Any app version may host now.[/]")
+        return
+    if not re.fullmatch(r"\d+\.\d+\.\d+", args[0]):
+        raise SystemExit("Give a version like 0.4.0 (or 'off').")
+    if not ask_yes(f"Require app version {args[0]} or newer to host? Friends on older versions will be "
+                   "asked to update before they can start the server.", True):
+        return
+    WORLD_DIR.mkdir(parents=True, exist_ok=True)
+    POLICY.write_text(json.dumps({"min_app": args[0], "set": int(time.time())}))
+    os.chmod(POLICY, 0o644)
+    say(f"[green]Hosting now requires app version {args[0]} or newer.[/]")
 
 
 def cmd_logs(args) -> None:
@@ -1131,7 +1167,7 @@ def cmd_help(_args) -> None:
 
 COMMANDS = {"status": cmd_status, "invite": cmd_invite, "friends": cmd_friends, "remove": cmd_remove,
             "remove-legacy": cmd_remove_legacy, "owner-code": cmd_owner_code, "logs": cmd_logs,
-            "update": cmd_update, "uninstall": cmd_uninstall, "setup-service": setup_service,
+            "update": cmd_update, "uninstall": cmd_uninstall, "require-app": cmd_require_app, "setup-service": setup_service,
             "help": cmd_help, "--help": cmd_help, "-h": cmd_help}
 
 

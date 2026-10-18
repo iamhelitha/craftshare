@@ -22,6 +22,7 @@ from pathlib import Path
 from aiohttp import web
 
 import core
+import updater
 import world
 
 # Bundled with PyInstaller: data files are unpacked to sys._MEIPASS.
@@ -102,6 +103,10 @@ class Manager:
         self.join_server: asyncio.base_events.Server | None = None
         self.ready = False                     # a real Minecraft status ping to the public address works
         self.public: dict | None = None
+        self.update: dict | None = None        # latest release info from GitHub (None until checked)
+        self.update_error = ""
+        self.update_required = ""              # minimum version the server owner requires for hosting
+        self.relaunch = False                  # start the (new) program again after shutting down
         self.apply_retention()
 
     def apply_retention(self) -> list[str]:
@@ -258,6 +263,14 @@ class Manager:
             name = c["player_name"].strip()
             if not name:
                 raise RuntimeError("Type your name on the Home page first.")
+            self.step = "Checking the app version the server owner requires..."
+            policy = await asyncio.to_thread(world.read_policy, c)
+            need = str(policy.get("min_app") or "")
+            if need and updater.newer(need, core.APP_VERSION):
+                self.update_required = need
+                raise RuntimeError(f"The server owner requires version {need} or newer to host. "
+                                   "Update the app on the Setup page (App updates), then try again.")
+            self.update_required = ""
             self.step = "Checking nobody else is hosting..."
             self.lock_id = uuid.uuid4().hex
             ok, holder = await asyncio.to_thread(world.acquire_lock, c, name, self.lock_id)
@@ -432,6 +445,55 @@ class Manager:
 
         await asyncio.gather(pump(reader, w2), pump(r2, writer))
 
+    # ------------------------------------------------------------ app updates
+    async def check_update(self) -> dict | None:
+        try:
+            self.update = await asyncio.to_thread(updater.check, core.parse_proxy(self.cfg["proxy"]))
+            self.update_error = ""
+        except Exception as e:                     # offline, rate-limited, no release yet...
+            self.update_error = str(e)
+        return self.update
+
+    def update_available(self) -> str:
+        u = self.update
+        return u["latest"] if u and updater.newer(u["latest"], core.APP_VERSION) else ""
+
+    async def update_loop(self) -> None:
+        await asyncio.sleep(20)
+        while True:
+            await self.check_update()
+            await asyncio.sleep(6 * 3600)
+
+    def _idle_or_raise(self) -> None:
+        if self.server.running or self.hosting or self.tunnel.running:
+            raise RuntimeError("Stop the server first. Updates are only installed while nothing is running.")
+
+    async def update_flow(self) -> None:
+        """Download, verify and test the new exe, swap it in, then restart into it."""
+        self._idle_or_raise()
+        self.step = "Checking for updates..."
+        if not await self.check_update():
+            raise RuntimeError(f"Could not check for updates: {self.update_error}")
+        target = self.update_available()
+        if not target:
+            self.note(f"You already have the newest version ({core.APP_VERSION}).", "success")
+            return
+        new = await asyncio.to_thread(updater.download_and_verify, self.update,
+                                      core.parse_proxy(self.cfg["proxy"]), self._prog, self._step_cb)
+        self.progress = None
+        self._idle_or_raise()                      # nobody pressed Start while it downloaded
+        updater.swap(new, core.APP_VERSION, target)
+        self.say(f"Installed version {target}. Restarting...")
+        self.relaunch = True
+        self.stopping.set()
+
+    async def rollback_flow(self) -> None:
+        self._idle_or_raise()
+        updater.roll_back()
+        self.say("Going back to the previous version. Restarting...")
+        self.relaunch = True
+        self.stopping.set()
+
     # ------------------------------------------------------------ background loops
     async def probe_loop(self) -> None:
         """Every few seconds ask the public address for a Minecraft status. Cheap, and it is the only
@@ -594,7 +656,8 @@ def make_app(mgr: Manager, token: str) -> web.Application:
             "pending_upload": mgr.pending_upload, "busy": mgr.busy, "step": mgr.step,
             "progress": mgr.progress, "question": mgr.question, "host_status": mgr.host_status,
             "sync": mgr.sync_on(), "online": sorted(mgr.online), "name": c["player_name"],
-            "ready": mgr.ready, "app_version": core.APP_VERSION,
+            "ready": mgr.ready, "app_version": core.APP_VERSION, "update": mgr.update_available(),
+            "update_required": mgr.update_required, "restarting": mgr.relaunch,
             "eula": core.eula_accepted(), "version": c["version"],
             "address": f"{c['ssh_host']}:{c['ssh_remote_port']}" if c["ssh_host"] else "",
             "join_proxy": f"localhost:{JOIN_PORT}" if mgr.join_server else "",
@@ -787,6 +850,37 @@ def make_app(mgr: Manager, token: str) -> web.Application:
             return fail(str(e))
         return ok()
 
+    # ---- app updates
+    def update_view() -> dict:
+        u = mgr.update or {}
+        return {"current": core.APP_VERSION, "latest": u.get("latest", ""), "available": mgr.update_available(),
+                "notes_url": u.get("notes_url", ""), "checked": u.get("checked", 0), "error": mgr.update_error,
+                "exe": updater.frozen(), "can_roll_back": updater.can_roll_back(),
+                "required": mgr.update_required}
+
+    @routes.get("/api/update")
+    async def update_get(request):
+        return web.json_response(update_view())
+
+    @routes.post("/api/update/check")
+    async def update_check(request):
+        await mgr.check_update()
+        return web.json_response(update_view())
+
+    @routes.post("/api/update/install")
+    async def update_install(request):
+        if not updater.frozen():
+            return fail("This copy runs from source code. Update it with  git pull  instead.")
+        mgr.run_task("Updating the app", mgr.update_flow())
+        return ok()
+
+    @routes.post("/api/update/rollback")
+    async def update_rollback(request):
+        if not updater.can_roll_back():
+            return fail("There is no previous version to go back to.")
+        mgr.run_task("Going back to the previous version", mgr.rollback_flow())
+        return ok()
+
     @routes.get("/api/versions")
     async def versions(request):
         try:
@@ -974,12 +1068,17 @@ async def main() -> None:
     url = f"http://127.0.0.1:{port}/"
     core.DATA_DIR.mkdir(parents=True, exist_ok=True)
     PORT_FILE.write_text(str(port))
-    print(f"Minecraft Server Manager is running at {url}", flush=True)
+    print(f"Minecraft Server Manager {core.APP_VERSION} is running at {url}", flush=True)
+    done = updater.confirm()
+    if done:
+        mgr.note(f"Updated to version {done}.", "success")
     status = asyncio.get_running_loop().create_task(mgr.status_loop())
     probe = asyncio.get_running_loop().create_task(mgr.probe_loop())
+    upd = asyncio.get_running_loop().create_task(mgr.update_loop())
     await mgr.update_join_proxy()
-    if not os.environ.get("MCMGR_NO_BROWSER"):
-        webbrowser.open(url)
+    reopen = os.environ.get("MCMGR_REOPEN_PORT")
+    if not os.environ.get("MCMGR_NO_BROWSER") or (reopen and reopen != str(port)):
+        webbrowser.open(url)                  # after an update the old tab reloads itself (same port)
     try:
         await mgr.stopping.wait()
     except asyncio.CancelledError:      # Ctrl+C
@@ -988,10 +1087,15 @@ async def main() -> None:
         print(f"[{time.strftime('%H:%M:%S')}] Shutting down...", flush=True)
         status.cancel()
         probe.cancel()
+        upd.cancel()
         await mgr.shutdown()
         await runner.cleanup()
         PORT_FILE.unlink(missing_ok=True)
-        print(f"[{time.strftime('%H:%M:%S')}] Done. Safe to turn off.", flush=True)
+        if mgr.relaunch:
+            updater.relaunch(wait_pid=os.getpid(), reopen_port=port)
+            print(f"[{time.strftime('%H:%M:%S')}] Restarting in a new window...", flush=True)
+        else:
+            print(f"[{time.strftime('%H:%M:%S')}] Done. Safe to turn off.", flush=True)
 
 
 LOG_FILE = core.DATA_DIR / "manager.log"
@@ -1085,6 +1189,17 @@ def launcher() -> int:
             break
         time.sleep(0.5)
     log.close()
+    p = updater.pending() if updater.frozen() else None
+    if p and p.get("to") == core.APP_VERSION:
+        # This new version stopped before it ever worked: put the previous one back and start it.
+        print(f"\nVersion {core.APP_VERSION} did not start properly. Going back to version {p.get('from')}...")
+        try:
+            updater.roll_back()
+            updater.relaunch()
+            time.sleep(3)
+            return 0
+        except OSError as e:
+            print(f"Could not go back automatically: {e}")
     if proc.returncode:
         print(f"\nThe manager stopped with an error (code {proc.returncode}). Details: {LOG_FILE}")
         input("Press Enter to close...")
@@ -1092,9 +1207,19 @@ def launcher() -> int:
 
 
 if __name__ == "__main__":
+    if "--version" in sys.argv:                  # the updater runs the new exe with this to test it
+        print(core.APP_VERSION)
+        sys.exit(0)
     if len(sys.argv) >= 5 and sys.argv[1] == "--socks-pipe":     # used by ssh as ProxyCommand
         core.socks_pipe_main(*sys.argv[2:5])
         sys.exit(0)
+    if "--wait-pid" in sys.argv:                 # restarted after an update: let the old instance finish
+        i = sys.argv.index("--wait-pid")
+        try:
+            updater.wait_for_pid(int(sys.argv[i + 1]))
+        except (IndexError, ValueError):
+            pass
+        del sys.argv[i:i + 2]
     if core.running_from_temp():
         print("This program is running from a temporary folder (probably straight from the zip).")
         print("Your settings and world would be lost. Extract the zip to a normal folder first")

@@ -169,6 +169,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <section id="page-home">
       <h1>Home</h1>
       <p class="sub">Start the server here. Friends join with the address below.</p>
+      <div class="banner info hidden" id="updateBanner" style="margin-bottom:14px;cursor:pointer"></div>
 
       <div class="card" id="setupCard">
         <h2>Before your first start</h2>
@@ -390,6 +391,25 @@ details summary { cursor: pointer; font-weight: 600; }
           <div class="console" id="tconsole" style="height:22vh"></div>
         </details>
       </div>
+      <div class="card" id="updateCard">
+        <h2>App updates</h2>
+        <div class="field">
+          <div><div class="label">Version <span id="updCurrent"></span></div>
+            <div class="help" id="updInfo">Checking...</div></div>
+          <div class="row">
+            <button class="btn" id="btnUpdCheck">Check now</button>
+            <button class="btn primary hidden" id="btnUpdInstall">Update</button>
+          </div>
+        </div>
+        <div class="field hidden" id="updRollbackRow">
+          <div><div class="label">Previous version</div>
+            <div class="help">The version you had before the last update is kept. Go back to it if something is wrong.</div></div>
+          <button class="btn" id="btnUpdRollback">Go back</button>
+        </div>
+        <p class="small muted">Updates are downloaded from the official GitHub releases, checked against the
+          published checksum and test-started before they replace anything. Your world, settings and backups are
+          not touched. Updates install only while the server is stopped.</p>
+      </div>
       <div class="savebar">
         <span class="small muted">Data folder: <span id="dataDir"></span></span>
         <button class="btn" id="btnOpenData">Open</button>
@@ -468,6 +488,8 @@ async function poll() {
     S = await api(`state?log=${seq.log}&tlog=${seq.tlog}&note=${seq.note}`);
     seq.log = S.log_seq; seq.tlog = S.tlog_seq;
     $("#appVersion").textContent = "Version " + S.app_version;
+    renderUpdateBanner();
+    if (window.updating && !S.busy && !S.restarting) window.updating = false;   // the update stopped (error shown)
     appendLog("#console", S.log); appendLog("#tconsole", S.tlog);
     if (!firstNotes) S.notes.forEach(n => { const [lvl, ...t] = n.split("|"); toast(t.join("|"), lvl); });
     firstNotes = false; seq.note = S.note_seq;
@@ -478,6 +500,7 @@ async function poll() {
       ask(q.text, q.options).then(v => api("answer", { id: q.id, value: v || q.options[q.options.length - 1] }));
     }
   } catch (e) {
+    if (S.restarting || window.updating) return waitForRestart();
     $("#statusTitle").textContent = "Lost connection to the manager";
     $("#statusSub").textContent = "Is the black window still open? Start it again with start.bat.";
     setDot("bad");
@@ -782,6 +805,7 @@ async function loadSetup() {
     cf.appendChild(row);
   }
   loadHub();
+  loadUpdate(false).catch(() => {});
   try {
     const v = await api("versions"); const sel = $("#versionSelect"); sel.innerHTML = "";
     for (const ver of v.versions) { const o = document.createElement("option"); o.value = ver;
@@ -838,6 +862,51 @@ $("#btnInvite").onclick = async () => {
   o.innerHTML = `Send this to your friend (works once, for 24 hours):<br><code></code> <button class="btn sm">Copy</button>`;
   o.querySelector("code").textContent = r.text;
   o.querySelector("button").onclick = () => { navigator.clipboard.writeText(r.text); toast("Copied", "success"); };
+};
+
+/* ---------------- app updates ---------------- */
+function renderUpdateBanner() {
+  const b = $("#updateBanner");
+  if (S.update_required) {
+    b.className = "banner danger"; b.style.marginBottom = "14px";
+    b.textContent = `The server owner requires version ${S.update_required} or newer to host. Click here to update.`;
+  } else if (S.update) {
+    b.className = "banner info"; b.style.marginBottom = "14px";
+    b.textContent = `Version ${S.update} is available. Click here to update (Setup > App updates).`;
+  } else { b.classList.add("hidden"); return; }
+  b.onclick = () => { location.hash = "#setup"; setTimeout(() => $("#updateCard").scrollIntoView({ behavior: "smooth" }), 200); };
+}
+function waitForRestart() {
+  document.body.innerHTML = '<main style="padding:40px"><h1>Restarting</h1><p class="sub">The new version is starting in a new window. This page reloads by itself.</p></main>';
+  const tryIt = () => fetch("/", { cache: "no-store" }).then(r => r.ok ? location.reload() : setTimeout(tryIt, 2000)).catch(() => setTimeout(tryIt, 2000));
+  setTimeout(tryIt, 3000);
+}
+async function loadUpdate(fresh) {
+  const u = fresh ? await api("update/check", {}) : await api("update");
+  $("#updCurrent").textContent = u.current;
+  const info = $("#updInfo"), btn = $("#btnUpdInstall");
+  btn.classList.toggle("hidden", !u.available);
+  if (u.available) {
+    info.innerHTML = `Version <b></b> is available. <a target="_blank" rel="noopener">What's new</a>`;
+    info.querySelector("b").textContent = u.available;
+    info.querySelector("a").href = u.notes_url || "#";
+    btn.textContent = "Update to " + u.available;
+  } else if (u.error) info.textContent = "Could not check for updates: " + u.error;
+  else if (u.latest) info.textContent = "You have the newest version.";
+  else info.textContent = "Not checked yet.";
+  if (!u.exe) info.textContent += " (Running from source code: update with git pull.)";
+  if (!u.exe) btn.classList.add("hidden");
+  $("#updRollbackRow").classList.toggle("hidden", !u.can_roll_back);
+}
+$("#btnUpdCheck").onclick = async () => { $("#updInfo").textContent = "Checking..."; await loadUpdate(true); };
+$("#btnUpdInstall").onclick = async () => {
+  if (S.server !== "stopped" || S.hosting) return toast("Stop the server first. Updates install only while nothing is running.", "error");
+  if (!await confirmDo("Download and install the update? The manager restarts in a new window when it is done (about a minute). Your world and settings are kept.", "Update")) return;
+  await api("update/install", {}); window.updating = true; location.hash = "#home";
+};
+$("#btnUpdRollback").onclick = async () => {
+  if (!await confirmDo("Go back to the previous version? The manager restarts in a new window.", "Go back")) return;
+  await api("update/rollback", {}); window.updating = true; location.hash = "#home";
 };
 
 loaders.setup = loadSetup;

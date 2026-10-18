@@ -46,6 +46,17 @@ everything after offering a backup download. Details: [docs/vps-setup.md](docs/v
 2. Open the app, type your name in **Setup**, paste the code under **Join a server**, press **Join**.
 3. Go to **Home** and press **Start server** to host, or just join the address shown there in Minecraft.
 
+## Updates
+
+The app checks GitHub for new releases. When one is out, Home shows a banner and **Setup > App updates** has an
+**Update** button. The update is downloaded from the official release, checked against its published SHA-256,
+test-started, and only then swapped in; the app restarts by itself in a new window. Your world, settings and
+backups are not touched, and updates install only while the server is stopped. If the new version cannot start,
+the previous one is put back automatically, and **Go back** returns to it any time.
+
+The VPS side updates with `mc-hub update`. The owner can require a minimum app version for hosting with
+`mc-hub require-app 0.4.0`, so nobody hosts the shared world with an outdated app.
+
 ## The pages
 
 - **Home**: start/stop hosting, who is hosting, the address to join, players online.

@@ -31,6 +31,7 @@ then press **Invite a friend**.
 | `mc-hub remove-legacy` | Remove the old shared keys from the first setup |
 | `mc-hub owner-code` | Make a new owner code; the old one stops working |
 | `mc-hub logs` | Recent service log |
+| `mc-hub require-app 0.4.0` | Only app version 0.4.0 or newer may host (older apps are asked to update first); `off` removes the rule |
 | `mc-hub update` | Update to the latest release (or `mc-hub update v0.4.0`) |
 | `mc-hub uninstall` | Remove everything, after offering a world backup download |
 

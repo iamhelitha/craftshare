@@ -34,7 +34,7 @@ DEFAULTS = {
     "sync_enabled": True, "sync_user": "mcsync", "sync_key": "keys/sync_key",
     "version": "26.3",
 }
-SOURCE_FILES = ["app.py", "core.py", "world.py", "web/index.html", "start.bat", "requirements.txt"]
+SOURCE_FILES = ["app.py", "core.py", "world.py", "updater.py", "web/index.html", "start.bat", "requirements.txt"]
 KEYS = ["keys/friend_tunnel", "keys/sync_key"]   # the only private keys that ever leave this PC
 
 

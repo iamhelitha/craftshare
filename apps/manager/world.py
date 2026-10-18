@@ -370,6 +370,12 @@ def release_lock(cfg: dict, my_id: str, force: bool = False) -> None:
         r.run(["-rm lock/lock.json", "-rm lock/heartbeat.json", "rmdir lock"])
 
 
+def read_policy(cfg: dict) -> dict:
+    """Rules the server owner set with `mc-hub require-app` (e.g. {"min_app": "0.4.0"}); {} if none."""
+    with _Remote(cfg) as r:
+        return r.get_json("policy.json") or {}
+
+
 # ---------------------------------------------------------------- world transfer
 def _state() -> dict:
     try:
