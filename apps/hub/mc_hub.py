@@ -140,8 +140,10 @@ def write_keys(st: dict) -> None:
 def legacy_count() -> int:
     n = 0
     for path in AUTH.values():
-        if path.exists():
+        try:
             n += sum(1 for ln in path.read_text().splitlines() if ln.strip() and f" {TAG}" not in ln)
+        except FileNotFoundError:
+            pass
     return n
 
 
@@ -258,6 +260,21 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "mc-hub"
     sys_version = ""                 # do not advertise the Python version
     timeout = 10                     # slow or idle clients are dropped (slowloris)
+
+    def handle_one_request(self):
+        """A bug or a server-side problem answers 500 instead of just hanging up on the client."""
+        try:
+            super().handle_one_request()
+        except (OSError, ssl.SSLError):                  # client went away / timed out
+            self.close_connection = True
+        except Exception:
+            import traceback
+            print(traceback.format_exc(), flush=True)
+            try:
+                self.reply(500, {"error": "The hub hit an internal problem. See: journalctl -u mc-hub (on the VPS)."})
+            except OSError:
+                pass
+            self.close_connection = True
 
     def log_message(self, *a):       # keep systemd's journal quiet
         pass
@@ -953,7 +970,9 @@ MemoryMax=64M
 TasksMax=64
 CPUQuota=25%
 # sandbox: no capabilities, read-only system, may only write its own state and the two key folders
-CapabilityBoundingSet=
+# Root must still walk through /home/<user> (private to that account) to reach the key files, which
+# needs CAP_DAC_OVERRIDE; every other capability is dropped.
+CapabilityBoundingSet=CAP_DAC_OVERRIDE
 AmbientCapabilities=
 NoNewPrivileges=yes
 PrivateTmp=yes
@@ -1029,6 +1048,7 @@ def install(firewall: bool) -> None:
         reload_sshd()
         if firewall:
             inst["firewall"] += [r for r in open_firewall() if r not in inst["firewall"]]
+            save(st)                                   # record rules now, even if a later step fails
         else:
             say(f"Firewall left unchanged. Friends need TCP {MC_PORT} (game) and {HUB_PORT} (invites) open.")
         install_rich(st)
