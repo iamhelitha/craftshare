@@ -35,6 +35,8 @@ curl -fsSL "$BASE/mc_hub.py" -o "$TMP/mc_hub.py"
 curl -fsSL "$BASE/SHA256SUMS.txt" -o "$TMP/SHA256SUMS.txt"
 want="$(grep -E ' \*?mc_hub\.py$' "$TMP/SHA256SUMS.txt" | cut -d' ' -f1)"
 have="$(sha256sum "$TMP/mc_hub.py" | cut -d' ' -f1)"
-[ -n "$want" ] && [ "$want" = "$have" ] || { red "Checksum mismatch - download is not what the release published. Aborting."; exit 1; }
+if [ -z "$want" ] || [ "$want" != "$have" ]; then
+  red "Checksum mismatch - download is not what the release published. Aborting."; exit 1
+fi
 
 if [ "$ARG" = uninstall ]; then python3 "$TMP/mc_hub.py" uninstall; else python3 "$TMP/mc_hub.py" install; fi
