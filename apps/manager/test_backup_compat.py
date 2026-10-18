@@ -144,6 +144,8 @@ assert first == again, "nothing changed: no duplicate"
 (SERVER / "server.properties").write_text("level-name=world\ngamemode=creative\n")
 st = (SERVER / "server.properties").stat()
 os.utime(SERVER / "server.properties", ns=(st.st_atime_ns, st.st_mtime_ns + 2_000_000_000))   # seconds later, like real life
+import time
+time.sleep(1.2)                       # backup file names carry the second; two in one second would share a name
 third = world.backup_world("auto")
 assert third != first, "a settings-only change must produce a new backup"
 print("ok  duplicate check: unchanged = skipped, settings-only change = new backup")
