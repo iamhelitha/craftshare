@@ -18,6 +18,8 @@ jobs:
         run: python -m py_compile apps/manager/*.py apps/hub/*.py
       - name: Hub self-test
         run: python apps/hub/test_hub.py
+      - name: Backup compatibility test
+        run: python apps/manager/test_backup_compat.py
       - name: Shell scripts
         run: shellcheck install.sh
       - name: Hub version placeholder intact (stamped at release)

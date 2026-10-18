@@ -84,7 +84,7 @@ The VPS side updates with `mc-hub update`. The owner can require a minimum app v
 - **Home**: start/stop hosting, who is hosting, the address to join, players online.
 - **Players**: make admins, change game mode, heal, kick, ban, whitelist.
 - **World settings**: game mode, difficulty, PvP, whitelist, cracked players and more.
-- **Backups**: automatic at every start, with limits so they do not fill your disk. Restore or drop in any world `.zip`.
+- **Backups**: automatic at every start, with limits so they do not fill your disk. Each holds the world, every player's progress, the world settings and the admin / whitelist / ban lists. Restore everything or just the world, or drop in any world `.zip`. Older backups keep working.
 - **Console**: server log, commands, chat.
 - **Setup**: your name, Minecraft version, memory, Java, network/proxy, friends and access.
 

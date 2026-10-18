@@ -25,6 +25,11 @@ import core
 CONFIG_FILES = ("server.properties", "ops.json", "whitelist.json",
                 "banned-players.json", "banned-ips.json", "usercache.json")
 CONFIG_PREFIX = "_server/"        # where those files live inside a backup zip
+# What each settings file must look like to be restored (a damaged or odd file is skipped, never fatal).
+JSON_LISTS = {"ops.json": ("uuid", "name"), "whitelist.json": ("uuid", "name"),
+              "banned-players.json": ("uuid", "name"), "banned-ips.json": ("ip",), "usercache.json": ("uuid", "name")}
+KEEP_LOCAL = ("level-name", "server-port", "server-ip")      # belong to this PC, never taken from a backup
+TRUSTED_PREFIXES = ("auto-", "manual-", "sync-", "pre-import-", "vps-world-")   # names the app itself gives backups
 STATE_FILE = core.DATA_DIR / "sync_state.json"
 STALE_AFTER = 180                 # seconds without a heartbeat before a lock counts as dead
 AUTOMATIC = ("auto", "sync", "pre-import")   # made by the app; may be deleted to save space
@@ -149,8 +154,57 @@ def delete_backup(name: str) -> bool:
     return True
 
 
-def restore_world(zip_path: Path, include_config: bool = False) -> None:
-    """Replace the current world with the one in `zip_path` (current one is backed up first)."""
+def backup_has_config(zip_path: Path) -> bool:
+    """True if the zip carries settings / player lists (backups from before that was added do not)."""
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            return any(n.startswith(CONFIG_PREFIX) and not n.endswith("/") for n in z.namelist())
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
+def is_app_backup(path: Path) -> bool:
+    """Made by this app (so its settings and player lists may be restored); a zip someone else gave you is not."""
+    return path.name.startswith(TRUSTED_PREFIXES)
+
+
+def _restore_config(cfg_dir: Path) -> tuple[list[str], list[str]]:
+    """Put back the settings and player lists saved with a backup. Returns (restored, skipped).
+
+    - Only files that exist in the zip are touched, so older backups with fewer files (or none) work.
+    - server.properties is merged key by key: keys in the backup win, anything else stays as it is, and the
+      settings that belong to this PC (world folder name, port, bind address) are never overwritten.
+    - The JSON lists must parse and look right; a damaged one is skipped and the current one is kept.
+    """
+    restored, skipped = [], []
+    for f in sorted(cfg_dir.iterdir()):
+        if f.name not in CONFIG_FILES or not f.is_file():
+            continue
+        try:
+            if f.name == "server.properties":
+                updates = {k: v for k, v in core.read_properties(f).items() if k not in KEEP_LOCAL}
+                if updates:
+                    core.write_properties(core.SERVER_DIR / "server.properties", updates)
+            else:
+                if f.stat().st_size > 5 * 1024 * 1024:
+                    raise ValueError("too big")
+                data = json.loads(f.read_text(encoding="utf-8"))
+                need = JSON_LISTS[f.name]
+                if not isinstance(data, list) or not all(isinstance(x, dict) and all(k in x for k in need) for x in data):
+                    raise ValueError("unexpected content")
+                shutil.copy2(f, core.SERVER_DIR / f.name)
+            restored.append(f.name)
+        except (OSError, ValueError):
+            skipped.append(f.name)
+    return restored, skipped
+
+
+def restore_world(zip_path: Path, include_config: bool = False) -> dict:
+    """Replace the current world with the one in `zip_path` (current one is backed up first).
+
+    With include_config the settings and player lists saved in the zip are restored too (see _restore_config).
+    Returns {"config_restored": [...], "config_skipped": [...]}."""
+    result = {"config_restored": [], "config_skipped": []}
     zip_path = Path(zip_path)
     if not zipfile.is_zipfile(zip_path):
         raise RuntimeError("That file is not a zip archive.")
@@ -172,11 +226,10 @@ def restore_world(zip_path: Path, include_config: bool = False) -> None:
         shutil.move(str(src), str(dest))
         cfg_dir = tmp / cfg_name
         if include_config and cfg_dir.is_dir():
-            for f in cfg_dir.iterdir():
-                if f.name in CONFIG_FILES:
-                    shutil.copy2(f, core.SERVER_DIR / f.name)
+            result["config_restored"], result["config_skipped"] = _restore_config(cfg_dir)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    return result
 
 
 # ---------------------------------------------------------------- sftp plumbing

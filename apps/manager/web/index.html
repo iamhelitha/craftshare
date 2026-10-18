@@ -758,8 +758,14 @@ async function loadBackups() {
     };
     tr.querySelector(".restore").onclick = async () => {
       if (r.running || S.hosting) return toast("Stop the server first", "warning");
-      if (await confirmDo(`Restore the world from ${fmtTime(b.time)}? Your current world is backed up first, so you can undo this.`, "Restore"))
-        { await api("backups/restore", { name: b.name }); setTimeout(loadBackups, 2000); }
+      let withConfig = false;
+      if (b.has_config) {
+        const c = await ask(`Restore from ${fmtTime(b.time)}?\n\n"Everything" also puts back the world settings (game mode, difficulty, ...) and the player lists (admins, whitelist, bans) saved with this backup. Players' progress is part of the world and is always restored. Your current world is backed up first, so you can undo this.`,
+          ["Restore everything", "World only", "Cancel"]);
+        if (c === "Cancel" || !c) return;
+        withConfig = c === "Restore everything";
+      } else if (!await confirmDo(`Restore the world from ${fmtTime(b.time)}? Your current world is backed up first, so you can undo this. (This older backup holds the world only, so your current settings and player lists stay as they are.)`, "Restore")) return;
+      await api("backups/restore", { name: b.name, config: withConfig }); setTimeout(loadBackups, 2000);
     };
     tb.appendChild(tr);
   }

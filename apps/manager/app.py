@@ -656,6 +656,7 @@ def _backups() -> list[dict]:
         st = p.stat()
         kind = p.name.split("-")[0]
         out.append({"name": p.name, "size": st.st_size, "time": st.st_mtime,
+                    "has_config": world.is_app_backup(p) and world.backup_has_config(p),
                     "kind": {"auto": "Automatic", "manual": "Made by you",
                              "sync": "Shared-world upload", "pre-import": "Before a restore"}.get(kind, kind)})
     return out
@@ -1068,11 +1069,16 @@ def make_app(mgr: Manager, token: str) -> web.Application:
         p = (core.BACKUP_DIR / name).resolve()
         return p if p.parent == core.BACKUP_DIR.resolve() and p.suffix == ".zip" and p.exists() else None
 
-    async def _restore(path: Path, cleanup: bool = False):
+    async def _restore(path: Path, cleanup: bool = False, config: bool = False):
         try:
             mgr.step = "Restoring the world..."
-            await asyncio.to_thread(world.restore_world, path)
-            mgr.note("World restored. Your previous world was backed up first.", "success")
+            res = await asyncio.to_thread(world.restore_world, path, config)
+            extra = ""
+            if res["config_restored"]:
+                extra = " Settings and player lists were restored too."
+            if res["config_skipped"]:
+                extra += f" Skipped (damaged in the backup): {', '.join(res['config_skipped'])}."
+            mgr.note("World restored. Your previous world was backed up first." + extra, "success")
             if mgr.sync_on():
                 choice = await mgr.ask("Make this the shared world for everyone? It replaces the shared "
                                        "world the next time you stop hosting.",
@@ -1088,10 +1094,12 @@ def make_app(mgr: Manager, token: str) -> web.Application:
     async def backup_restore(request):
         if mgr.server.running or mgr.hosting:
             return fail("Stop the server first")
-        p = _backup_path(str((await body(request)).get("name", "")))
+        b = await body(request)
+        p = _backup_path(str(b.get("name", "")))
         if not p:
             return fail("Backup not found")
-        mgr.run_task("Restoring", _restore(p))
+        # settings and player lists only from backups this app made, never from a zip someone else supplied
+        mgr.run_task("Restoring", _restore(p, config=bool(b.get("config")) and world.is_app_backup(p)))
         return ok()
 
     @routes.post("/api/backups/upload")
