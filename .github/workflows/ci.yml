@@ -5,13 +5,14 @@ on:
   pull_request:
 permissions:
   contents: read
+  pull-requests: read     # gitleaks lists the PR's commits
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: "3.13" }
       - name: Syntax check
         run: python -m py_compile apps/manager/*.py apps/hub/*.py
@@ -22,6 +23,6 @@ jobs:
       - name: No private keys in the tree
         run: "! git grep -nE 'BEGIN (OPENSSH|RSA|EC) PRIVATE KEY'"
       - name: Secret scan (full history)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

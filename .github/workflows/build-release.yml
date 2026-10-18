@@ -19,9 +19,9 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ inputs.tag }}" }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: "3.13" }
       - name: Build MinecraftManager.exe
         working-directory: apps/manager
@@ -39,7 +39,7 @@ jobs:
           cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Attest build provenance
         continue-on-error: true      # not available on private repos of free accounts
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             out/MinecraftManager.exe
