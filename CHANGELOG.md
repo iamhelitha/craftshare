@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/iamhelitha/craftshare/compare/v0.4.0...v0.5.0) (2026-10-18)
+
+
+### Features
+
+* **manager:** first-run setup guide, strict input checks and automatic proxy fallback ([f71f1be](https://github.com/iamhelitha/craftshare/commit/f71f1be91bf5530e4f156719a7aa6b4d5c7fe065))
+
 ## [0.4.0](https://github.com/iamhelitha/craftshare/compare/v0.3.2...v0.4.0) (2026-10-18)
 
 
