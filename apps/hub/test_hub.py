@@ -13,6 +13,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PORT = 18766
 KEY = "ssh-ed25519 " + "A" * 68
+ADMIN = "test-secret-d0-not-use-in-production"      # throwaway owner token for the local test hub
 
 
 def main() -> None:
@@ -39,7 +40,7 @@ def main() -> None:
             return r.status, data
 
     st = mc_hub.load()
-    st["admin"] = mc_hub.sha("test-secret-d0-not-use-in-production")
+    st["admin"] = mc_hub.sha(ADMIN)
     st["public_ip"] = "203.0.113.5"
     mc_hub.save(st)
     for user, path in mc_hub.AUTH.items():          # pretend an old shared key already exists
@@ -55,7 +56,7 @@ def main() -> None:
                 time.sleep(0.1)
         assert call("GET", "/info")[1] == {"mc_hub": mc_hub.HUB_VERSION}, "public /info reveals nothing else"
         assert call("GET", "/admin/friends")[0] == 403, "admin needs a token"
-        code = call("POST", "/admin/invite", {}, "secret")[1]["code"]
+        code = call("POST", "/admin/invite", {}, ADMIN)[1]["code"]
         assert call("POST", "/enroll", {"code": code, "name": "bob", "pubkey": 'ssh-ed25519 AAAA" x'})[0] == 400
 
         # the desktop app's own client: pinned certificate
@@ -65,15 +66,15 @@ def main() -> None:
         r = core.hub_call("127.0.0.1", PORT, "POST", "/enroll", {"code": code, "name": "bob", "pubkey": KEY}, fp=fp[:20])
         assert r["ok"] and r["ssh_user"] == "mctunnel"
         try:
-            core.hub_call("127.0.0.1", PORT, "GET", "/admin/friends", token="test-secret-d0-not-use-in-production", fp="0" * 20)
+            core.hub_call("127.0.0.1", PORT, "GET", "/admin/friends", token=ADMIN, fp="0" * 20)
             raise AssertionError("wrong fingerprint accepted")
         except RuntimeError as e:
             assert "identity" in str(e)
 
         assert call("POST", "/enroll", {"code": code, "name": "bob2", "pubkey": KEY})[0] == 403, "invite is single use"
-        friends = call("GET", "/admin/friends", token="test-secret-d0-not-use-in-production")[1]
+        friends = call("GET", "/admin/friends", token=ADMIN)[1]
         assert [f["name"] for f in friends["friends"]] == ["bob"] and friends["legacy"] == 2
-        assert call("POST", "/admin/remove", {"name": "bob"}, "test-secret-d0-not-use-in-production")[0] == 200
+        assert call("POST", "/admin/remove", {"name": "bob"}, ADMIN)[0] == 200
         assert "AAAAOLD" in mc_hub.AUTH["mcsync"].read_text(), "old keys must survive"
         assert "mc-hub:bob" not in mc_hub.AUTH["mctunnel"].read_text()
 
@@ -104,7 +105,7 @@ def main() -> None:
                 break
         status, body = call("GET", "/info")
         assert status == 429 and "Try again" in body["error"], (status, body)
-        assert call("GET", "/admin/friends", token="secret")[0] == 429, "even the right token waits while blocked"
+        assert call("GET", "/admin/friends", token=ADMIN)[0] == 429, "even the right token waits while blocked"
 
         # plain HTTP is not served
         conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=5)
