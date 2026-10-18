@@ -1,3 +1,4 @@
 *.sh text eol=lf
 *.bat text eol=crlf
-hub/*.py text eol=lf
+apps/hub/*.py text eol=lf
+install.sh text eol=lf

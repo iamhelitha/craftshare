@@ -161,6 +161,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <div class="spacer"></div>
     <div class="mini"><span class="dot off" id="navDot" style="width:10px;height:10px"></span><span id="navStatus">Offline</span></div>
     <a href="#" id="shutdownLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10M5.6 6.6a9 9 0 1 0 12.8 0"/></svg>Shut down</a>
+    <div class="small muted" id="appVersion" style="padding:4px 12px"></div>
   </nav>
 
   <main>
@@ -466,6 +467,7 @@ async function poll() {
   try {
     S = await api(`state?log=${seq.log}&tlog=${seq.tlog}&note=${seq.note}`);
     seq.log = S.log_seq; seq.tlog = S.tlog_seq;
+    $("#appVersion").textContent = "Version " + S.app_version;
     appendLog("#console", S.log); appendLog("#tconsole", S.tlog);
     if (!firstNotes) S.notes.forEach(n => { const [lvl, ...t] = n.split("|"); toast(t.join("|"), lvl); });
     firstNotes = false; seq.note = S.note_seq;

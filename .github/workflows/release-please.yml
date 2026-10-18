@@ -1,0 +1,32 @@
+# Versioning: commits like "feat: ..." / "fix: ..." keep a "Release vX.Y.Z" pull request up to date.
+# Merging that PR bumps VERSION + CHANGELOG.md, tags the release, and builds the downloads.
+# (The build runs in this workflow because releases made with GITHUB_TOKEN do not trigger other workflows.)
+name: Release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+  build:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.created == 'true' }}
+    uses: ./.github/workflows/build-release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write

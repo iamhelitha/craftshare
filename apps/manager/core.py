@@ -20,6 +20,18 @@ APP_NAME = "MinecraftServerManager"
 BASE = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 
 
+def _app_version() -> str:
+    for d in (Path(getattr(sys, "_MEIPASS", BASE)), BASE, BASE.parent.parent):
+        try:
+            return (d / "VERSION").read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+    return "dev"
+
+
+APP_VERSION = _app_version()
+
+
 def running_from_temp() -> bool:
     """True when started from inside a zip viewer / temp folder (settings and world would be lost)."""
     s = str(BASE).lower()
@@ -30,8 +42,10 @@ def _data_dir() -> Path:
     if os.environ.get("MCMGR_DATA"):
         return Path(os.environ["MCMGR_DATA"])
     # existing installs keep their world/config next to the code; new ones use the user profile
-    if (BASE / "server").exists() or (BASE / "manager_config.json").exists():
-        return BASE
+    # (the repo root counts too: apps/manager/ sits two levels below it in a source checkout)
+    for legacy_base in (BASE, BASE.parent.parent):
+        if (legacy_base / "server").exists() or (legacy_base / "manager_config.json").exists():
+            return legacy_base
     # Earlier builds used %APPDATA%; keep using it if that is where the world already is.
     legacy = Path(os.environ.get("APPDATA") or "/nonexistent") / APP_NAME
     if (legacy / "server").exists() or (legacy / "manager_config.json").exists():

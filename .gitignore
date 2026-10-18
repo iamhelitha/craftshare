@@ -26,3 +26,6 @@ __pycache__/
 build/
 dist/
 *.spec
+
+# built copies
+apps/manager/VERSION

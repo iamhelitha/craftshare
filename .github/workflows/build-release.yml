@@ -1,0 +1,50 @@
+# Builds the Windows exe and attaches the downloads to a release. Called by release-please.yml,
+# or run it by hand (Actions > Build release assets) to rebuild an existing tag.
+name: Build release assets
+on:
+  workflow_call:
+    inputs:
+      tag: { required: true, type: string }
+  workflow_dispatch:
+    inputs:
+      tag: { description: "Release tag, e.g. v0.2.0", required: true, type: string }
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.tag }}" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: Build MinecraftManager.exe
+        working-directory: apps/manager
+        run: |
+          python -m pip install pyinstaller -r requirements.txt
+          cp ../../VERSION VERSION
+          python -m PyInstaller --onefile --name MinecraftManager --add-data "web;web" --add-data "VERSION;." --noconfirm app.py
+          python package.py --exe
+      - name: Collect files
+        run: |
+          mkdir out
+          cp apps/manager/dist/MinecraftManager.exe out/
+          cp apps/manager/MinecraftServerManager.zip "out/MinecraftServerManager-${{ inputs.tag }}.zip"
+          cp apps/hub/mc_hub.py out/
+          cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Attest build provenance
+        continue-on-error: true      # not available on private repos of free accounts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            out/MinecraftManager.exe
+            out/mc_hub.py
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" out/* --clobber

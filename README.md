@@ -1,31 +1,66 @@
 # Minecraft Server Manager
 
-Double-click `start.bat` (or `MinecraftManager.exe` in the friend zip). A small window opens and your browser shows
-the manager at `http://127.0.0.1:8765` (this PC only). To turn everything off, close that window or press
-**Shut down** in the page: the server is stopped, the world saved, backed up and uploaded before it turns off.
-That finishes in the background even after the window is gone, so give it a minute before shutting down the PC.
+Host a vanilla Minecraft server from your own Windows PC, let friends join through your VPS, and share one
+world so anyone in the group can host when they want: one at a time, with the latest progress.
 
-- **Home**: type your name, accept the EULA once, press **Start server**. Minecraft and Java download
-  automatically the first time. With the shared world on, only one person can host at a time; the page shows who.
+- **Friendly web page**: start/stop, players and admins, world settings, backups, console. No terminal.
+- **No port forwarding**: an SSH reverse tunnel publishes the server on your VPS (`VPS:25565`).
+- **Shared world**: kept on the VPS. Whoever hosts downloads the latest copy and uploads it when done. A lock
+  stops two people hosting at once.
+- **Invites, not shared passwords**: each PC makes its own key; the owner sends a single-use invite code.
+- **No installs for friends**: one `.exe`; Minecraft and Java download automatically.
+- Light on the VPS (about 20 MB of RAM) and does not touch other software such as 3x-ui/Xray.
+
+## Download
+
+Get `MinecraftManager.exe` (or the zip) from the [latest release](../../releases/latest).
+Put it in its own folder and double-click it. Your browser opens the manager at `http://127.0.0.1:8765`
+(this PC only). Close the black window or press **Shut down** to stop: the world is saved, backed up and
+uploaded first.
+
+## Owner: set up your VPS (once)
+
+Log in to your Linux VPS as root and run:
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/OWNER/REPO/main/install.sh)
+```
+
+It prints an **owner code**. In the app open **Setup > Friends & access > I own the VPS** and paste it.
+If your provider has a firewall panel, open TCP **25565** and **8766**. Details: [docs/vps-setup.md](docs/vps-setup.md).
+
+## Friends: join
+
+1. The owner presses **Invite a friend** and sends you the code.
+2. Open the app, type your name in **Setup**, paste the code under **Join a server**, press **Join**.
+3. Go to **Home** and press **Start server** to host, or just join the address shown there in Minecraft.
+
+## The pages
+
+- **Home**: start/stop hosting, who is hosting, the address to join, players online.
 - **Players**: make admins, change game mode, heal, kick, ban, whitelist.
-- **World settings**: game mode, difficulty, PvP, whitelist, cracked players, and so on.
-- **Backups**: a backup is made at every start. Back up now, download, restore, or drop in any world `.zip`.
-- **Console**: server log, commands, chat, quick buttons.
-- **Setup**: Minecraft version, memory, Java, and (advanced) the VPS connection.
+- **World settings**: game mode, difficulty, PvP, whitelist, cracked players and more.
+- **Backups**: automatic at every start, with limits so they do not fill your disk. Restore or drop in any world `.zip`.
+- **Console**: server log, commands, chat.
+- **Setup**: your name, Minecraft version, memory, Java, network/proxy, friends and access.
 
-Extract the zip first. Running it from inside the zip loses your settings.
-Data (settings, world, backups, Java) lives in the folder shown on the Setup page.
+## Run from source
 
-For the owner: `vps_setup.sh` (run once as root) creates the tunnel-only and storage-only VPS accounts.
-`python package.py` builds the friend zip; `build.bat` builds the .exe version.
+```bat
+start.bat
+```
 
-## Setting up the VPS (owner, once)
+Needs Python 3.11+. Developer notes: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/architecture.md](docs/architecture.md).
 
-Copy `hub/mc_hub.py` to the VPS and run it as root:
+## Repository layout
 
-    scp hub/mc_hub.py root@YOUR_VPS:/root/
-    ssh root@YOUR_VPS "python3 /root/mc_hub.py install"
+```
+apps/manager/   the Windows app (aiohttp backend + web/index.html)
+apps/hub/       mc-hub, the VPS service for invites
+install.sh      one-line VPS installer
+docs/           setup and architecture notes
+```
 
-It prints an owner code. Paste it in the app under Setup > Friends & access > "I own the VPS". Then use
-"Invite a friend" and send the code; the friend pastes it in the same card ("Join a server"). If friends
-cannot connect, open TCP 8766 (and 25565) in your VPS provider's firewall.
+## License
+
+[GPL-3.0](LICENSE). Not affiliated with Mojang or Microsoft.

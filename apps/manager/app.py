@@ -594,7 +594,7 @@ def make_app(mgr: Manager, token: str) -> web.Application:
             "pending_upload": mgr.pending_upload, "busy": mgr.busy, "step": mgr.step,
             "progress": mgr.progress, "question": mgr.question, "host_status": mgr.host_status,
             "sync": mgr.sync_on(), "online": sorted(mgr.online), "name": c["player_name"],
-            "ready": mgr.ready,
+            "ready": mgr.ready, "app_version": core.APP_VERSION,
             "eula": core.eula_accepted(), "version": c["version"],
             "address": f"{c['ssh_host']}:{c['ssh_remote_port']}" if c["ssh_host"] else "",
             "join_proxy": f"localhost:{JOIN_PORT}" if mgr.join_server else "",

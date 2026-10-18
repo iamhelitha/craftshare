@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent if (HERE.parent.parent / "VERSION").exists() else HERE   # repo root (README, VERSION)
 TOP = "MinecraftServerManager"
 
 
@@ -33,7 +34,7 @@ DEFAULTS = {
     "sync_enabled": True, "sync_user": "mcsync", "sync_key": "keys/sync_key",
     "version": "26.3",
 }
-SOURCE_FILES = ["app.py", "core.py", "world.py", "web/index.html", "start.bat", "requirements.txt", "README.md"]
+SOURCE_FILES = ["app.py", "core.py", "world.py", "web/index.html", "start.bat", "requirements.txt"]
 KEYS = ["keys/friend_tunnel", "keys/sync_key"]   # the only private keys that ever leave this PC
 
 
@@ -48,6 +49,9 @@ def main() -> None:
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for src, name in files:
             z.write(HERE / src, f"{TOP}/{name}")
+        for extra in ("VERSION", "README.md"):
+            if (ROOT / extra).exists():
+                z.write(ROOT / extra, f"{TOP}/{extra}")
         if legacy:
             for key in KEYS:
                 z.write(HERE / key, f"{TOP}/{key}")

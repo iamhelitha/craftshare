@@ -3,6 +3,7 @@
 
   sudo python3 mc_hub.py install     one-time setup (accounts, firewall, systemd service)
   sudo python3 mc_hub.py reset-token print a new owner code (use if you lost it)
+  sudo python3 mc_hub.py uninstall   remove the service (keeps the world, accounts and friends)
   python3 mc_hub.py serve            run the service in the foreground (systemd does this)
 
 Friends send an invite code + their PUBLIC key; the hub adds it to the two locked-down accounts
@@ -265,10 +266,22 @@ def install() -> None:
     print(f"If friends cannot connect, also open TCP {HUB_PORT} in your VPS provider's firewall panel.")
 
 
+def uninstall() -> None:
+    if os.geteuid() != 0:
+        sys.exit("Run this as root:  sudo python3 mc_hub.py uninstall")
+    sh("systemctl", "disable", "--now", "mc-hub", check=False)
+    Path("/etc/systemd/system/mc-hub.service").unlink(missing_ok=True)
+    shutil.rmtree(INSTALL_DIR, ignore_errors=True)
+    sh("systemctl", "daemon-reload", check=False)
+    print("mc-hub removed. The world in /srv/mcworld, the mctunnel/mcsync accounts and /etc/mc-hub were kept.")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "serve"
     if cmd == "install":
         install()
+    elif cmd == "uninstall":
+        uninstall()
     elif cmd == "reset-token":
         print(owner_code(make_token()))
     else:
