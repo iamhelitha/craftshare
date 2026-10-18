@@ -139,6 +139,27 @@ dialog .body { padding: 22px 22px 8px; white-space: pre-line; }
 dialog .actions { padding: 16px 22px 20px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 details summary { cursor: pointer; font-weight: 600; }
 
+body.onboarding nav { display: none; }
+body.onboarding .layout { grid-template-columns: 1fr; }
+body.onboarding main { margin: 0 auto; }
+.wiz-steps { display: flex; gap: 6px; margin: 4px 0 18px; flex-wrap: wrap; }
+.wiz-steps span { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: var(--panel-2); color: var(--muted); }
+.wiz-steps span.cur { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.wiz-steps span.done { color: var(--text); }
+.chk { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); align-items: start; }
+.chk:first-child { border-top: 0; }
+.chk .ic { font-weight: 700; text-align: center; }
+.chk .ic.ok { color: var(--ok); } .chk .ic.warn { color: var(--warn); } .chk .ic.fail { color: var(--danger); }
+.opt { display: block; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 8px 0; cursor: pointer; }
+.opt:hover { background: var(--panel-2); }
+.opt.sel { border-color: var(--accent); background: var(--accent-soft); }
+.opt input[type=radio] { margin-right: 8px; }
+.opt .sub2 { font-size: 13px; color: var(--muted); margin: 4px 0 0 24px; }
+.opt .more { margin: 10px 0 0 24px; }
+.bad-msg { color: var(--danger); font-size: 13px; min-height: 18px; }
+.ok-msg { color: var(--ok); font-size: 13px; }
+.wizgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+@media (max-width: 760px) { .wizgrid { grid-template-columns: 1fr; } }
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
   nav { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 10px; }
@@ -165,6 +186,23 @@ details summary { cursor: pointer; font-weight: 600; }
   </nav>
 
   <main>
+    <!-- SETUP GUIDE -->
+    <section id="page-onboard" class="hidden">
+      <h1>Welcome</h1>
+      <p class="sub">A few quick questions and you are ready to start your server. You can change everything later.</p>
+      <div class="wiz-steps" id="wizSteps"></div>
+      <div class="card">
+        <div id="wizBody"></div>
+        <div class="row spread" style="margin-top:20px">
+          <button class="btn" id="wizBack">Back</button>
+          <div class="row">
+            <button class="btn" id="wizSkip">Skip the guide</button>
+            <button class="btn primary" id="wizNext">Next</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- HOME -->
     <section id="page-home">
       <h1>Home</h1>
@@ -330,7 +368,8 @@ details summary { cursor: pointer; font-weight: 600; }
       <h1>Setup</h1>
       <p class="sub">Usually you only need this once.</p>
       <div class="card">
-        <h2>You</h2>
+        <div class="row spread"><h2 style="margin:0">You</h2>
+          <a class="btn sm" href="#onboard">Run the setup guide again</a></div>
         <div class="field">
           <div><div class="label">Your name</div><div class="help">Shown to others while you host.</div></div>
           <input type="text" id="cfg-player_name" maxlength="24">
@@ -480,6 +519,7 @@ function show(page) {
   if (!$("#page-" + page)) page = "home";
   $$("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "page-" + page));
   $$("nav a[data-page]").forEach(a => a.classList.toggle("active", a.dataset.page === page));
+  document.body.classList.toggle("onboarding", page === "onboard");
   if (loaders[page]) loaders[page]();
 }
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
@@ -492,6 +532,7 @@ async function poll() {
     seq.log = S.log_seq; seq.tlog = S.tlog_seq;
     $("#appVersion").textContent = "Version " + S.app_version;
     renderUpdateBanner();
+    if (S.onboarding && !window.wizShown) { window.wizShown = true; location.hash = "#onboard"; }
     if (window.updating && !S.busy && !S.restarting) window.updating = false;   // the update stopped (error shown)
     appendLog("#console", S.log); appendLog("#tconsole", S.tlog);
     if (!firstNotes) S.notes.forEach(n => { const [lvl, ...t] = n.split("|"); toast(t.join("|"), lvl); });
@@ -815,7 +856,9 @@ async function loadSetup() {
     pd.innerHTML = `<span class="muted">Windows is using a proxy: <code></code></span> <button class="btn sm">Use it</button>`;
     pd.querySelector("code").textContent = cfg.windows_proxy;
     pd.querySelector("button").onclick = () => { $("#cfg-proxy").value = cfg.windows_proxy; toast("Press Save to apply"); };
-  } else if (cfg.proxy) pd.innerHTML = '<span class="muted">In use. Players on this PC join through localhost:25566 (shown on Home).</span>';
+  } else if (cfg.proxy) pd.innerHTML = S.proxy_state === "down"
+    ? '<span class="muted">Not running right now, so the normal connection is used automatically. It is picked up again when the proxy app starts.</span>'
+    : '<span class="muted">In use. Players on this PC join through localhost:25566 (shown on Home).</span>';
   $("#jarInfo").textContent = cfg.jar ? `Installed: ${cfg.version || "unknown"}. Everyone must use the same version.` : "Not installed yet — it downloads automatically when you start.";
   $("#javaInfo").innerHTML = cfg.java_ok ? `Java ${cfg.java_major} found ✓` :
     cfg.java_major ? `Java ${cfg.java_major} is too old (needs ${cfg.java_required}+). Install it automatically:` : "Java not found. It installs automatically when you start, or click:";
@@ -886,6 +929,236 @@ $("#btnInvite").onclick = async () => {
   o.querySelector("code").textContent = r.text;
   o.querySelector("button").onclick = () => { navigator.clipboard.writeText(r.text); toast("Copied", "success"); };
 };
+
+/* ---------------- setup guide ---------------- */
+const WIZ = ["Your PC", "You", "How you play", "World", "Network", "Done"];
+let W = { step: 0, mode: null, connected: false, pre: null, picks: {} };
+const NAME_OK = /^[A-Za-z0-9_-]{1,24}$/;
+const el = (tag, props = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, props); kids.forEach(k => e.append(k)); return e; };
+const html = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
+
+async function startWizard() {
+  W = { step: 0, mode: null, connected: false, pre: null, picks: {} };
+  document.body.classList.add("onboarding");
+  cfg = await api("config");
+  W.connected = !!(cfg.ssh_key && cfg.sync_enabled && cfg.ssh_host);
+  W.mode = W.connected ? "connected" : null;
+  wizRender();
+}
+loaders.onboard = startWizard;
+
+function wizSteps() {
+  const box = $("#wizSteps"); box.innerHTML = "";
+  WIZ.forEach((n, i) => box.append(el("span", { textContent: `${i + 1}. ${n}`, className: i === W.step ? "cur" : i < W.step ? "done" : "" })));
+  $("#wizBack").style.visibility = W.step === 0 ? "hidden" : "visible";
+  $("#wizSkip").classList.toggle("hidden", W.step === WIZ.length - 1);
+}
+function wizNextLabel(t, enabled) { const b = $("#wizNext"); b.textContent = t; b.disabled = !enabled; }
+
+async function wizRender() {
+  wizSteps();
+  const body = $("#wizBody"); body.innerHTML = "";
+  await [wizPc, wizYou, wizMode, wizWorld, wizNet, wizDone][W.step](body);
+}
+
+/* 1. the PC */
+async function wizPc(body) {
+  body.append(el("h2", { textContent: "Checking your PC" }));
+  const list = el("div"); body.append(list, el("p", { className: "small muted", textContent: "Nothing is changed by this check." }));
+  wizNextLabel("Next", false);
+  list.append(el("div", { className: "muted", textContent: "Looking..." }));
+  const again = el("button", { className: "btn sm", textContent: "Check again", onclick: () => wizRender() });
+  W.pre = await api("precheck");
+  list.innerHTML = "";
+  for (const i of W.pre.items) {
+    const row = el("div", { className: "chk" });
+    row.append(el("span", { className: "ic " + i.status, textContent: i.status === "ok" ? "✓" : i.status === "warn" ? "!" : "✕" }),
+      el("div", {}, el("b", { textContent: i.label }), el("div", { className: "small muted", textContent: i.detail })));
+    list.append(row);
+  }
+  body.append(again);
+  if (!W.pre.ok) body.append(el("div", { className: "bad-msg", textContent: "Something must be fixed before the server can run (marked ✕). Fix it, then check again." }));
+  wizNextLabel("Next", W.pre.ok);
+}
+
+/* 2. you */
+function wizYou(body) {
+  body.append(el("h2", { textContent: "About you" }));
+  const name = el("input", { type: "text", id: "wizName", maxLength: 24, placeholder: "e.g. Alex", value: cfg.player_name || "" });
+  const msg = el("div", { className: "bad-msg" });
+  const eula = el("input", { type: "checkbox", id: "wizEula", checked: !!cfg.eula });
+  body.append(
+    el("div", { className: "label", textContent: "Your name" }),
+    el("div", { className: "small muted", textContent: "Friends see it while you host. Letters, numbers, _ and - only; no spaces." }),
+    name, msg,
+    el("div", { className: "label", textContent: "Minecraft EULA", style: "margin-top:14px" }),
+    el("div", { className: "small muted", textContent: "Mojang requires you to agree before you run a server." }),
+    html('<label class="row" style="margin-top:6px"><span class="switch"><input type="checkbox"><span></span></span><span>I agree to the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a></span></label>'));
+  const sw = body.querySelector("label input"); sw.checked = !!cfg.eula; sw.id = "wizEula";
+  const check = () => {
+    const v = name.value.trim();
+    msg.textContent = !v ? "" : NAME_OK.test(v) ? "" : /\s/.test(v) ? "No spaces please: try " + v.replace(/\s+/g, "_") : "Only letters, numbers, _ and - (up to 24).";
+    wizNextLabel("Next", NAME_OK.test(v) && sw.checked);
+  };
+  name.oninput = check; sw.onchange = check; check();
+}
+
+/* 3. how will you play */
+function wizMode(body) {
+  body.append(el("h2", { textContent: "How do you want to play?" }));
+  const opts = [
+    ["solo", "Just on this PC (or my home network)", "No server rental needed. Friends on other networks cannot join."],
+    ["join", "Join a friend's setup", "A friend runs the VPS and sent you an invite code. You can take turns hosting the same world."],
+    ["owner", "I own a VPS", "You installed CraftShare on your VPS and have the owner code. You can invite friends."],
+  ];
+  if (W.connected) opts.unshift(["connected", `Already connected to ${cfg.ssh_host}`, "Nothing to do here. Press Next."]);
+  const holder = el("div"); body.append(holder);
+  const draw = () => {
+    holder.innerHTML = "";
+    for (const [id, title, sub] of opts) {
+      const lab = el("label", { className: "opt" + (W.mode === id ? " sel" : "") });
+      const r = el("input", { type: "radio", name: "mode", checked: W.mode === id, onchange: () => { W.mode = id; draw(); wizGate(); } });
+      lab.append(r, el("b", { textContent: title }), el("div", { className: "sub2", textContent: sub }));
+      if (W.mode === id && (id === "join" || id === "owner")) {
+        const more = el("div", { className: "more" });
+        const inp = el("input", { type: "text", placeholder: id === "join" ? "Invite code, e.g. 1.2.3.4:8766/ABCD-EFGH-JKLM/1a2b..." : "Owner code from your VPS (mc-hub owner-code)", style: "width:100%" });
+        const status = el("div", { className: "small", style: "margin-top:6px" });
+        const go = el("button", { className: "btn primary sm", textContent: id === "join" ? "Join" : "Connect", style: "margin-top:8px", onclick: async () => {
+          go.disabled = true; status.className = "small muted"; status.textContent = "Connecting...";
+          try {
+            if (id === "join") await api("hub/join", { invite: inp.value, name: W.picks.name || cfg.player_name });
+            else await api("hub/owner", { code: inp.value });
+            W.connected = true; status.className = "ok-msg"; status.textContent = "Connected. This PC can now use the shared world.";
+            cfg = await api("config"); wizGate();
+          } catch (e) { status.className = "bad-msg"; status.textContent = e.message; go.disabled = false; }
+        } });
+        if (W.connected && (W.mode === "join" || W.mode === "owner")) { status.className = "ok-msg"; status.textContent = "Connected."; }
+        more.append(inp, go, status);
+        if (id === "owner") more.append(el("div", { className: "small muted", style: "margin-top:8px" }, "No VPS yet? ",
+          el("a", { href: "https://github.com/iamhelitha/craftshare/blob/main/docs/vps-setup.md", target: "_blank", rel: "noopener", textContent: "How to set one up" })));
+        lab.append(more);
+        more.onclick = e => e.stopPropagation();
+      }
+      holder.append(lab);
+    }
+  };
+  draw();
+  wizGate = () => wizNextLabel("Next", W.mode === "solo" || W.mode === "connected" || ((W.mode === "join" || W.mode === "owner") && W.connected));
+  wizGate();
+}
+let wizGate = () => {};
+
+/* 4. the world */
+async function wizWorld(body) {
+  body.append(el("h2", { textContent: "Your world" }));
+  const pre = W.pre || await api("precheck");
+  const settings = Object.fromEntries((await api("settings")).fields.map(f => [f.key, f.value]));
+  const rec = pre.recommended_ram_gb, total = Math.max(2, Math.floor((pre.ram_mb || 8192) / 1024));
+  const gb = parseInt(cfg.ram_max) / (cfg.ram_max.endsWith("M") ? 1024 : 1);
+  const grid = el("div", { className: "wizgrid" });
+  const field = (label, node, help) => el("label", {}, el("div", { className: "label small", textContent: label }), node,
+    help ? el("div", { className: "small muted", textContent: help }) : "");
+  const select = (id, opts, val) => { const x = el("select", { id }); opts.forEach(o => x.append(el("option", { value: o, textContent: o, selected: o === val }))); return x; };
+  const ver = el("select", { id: "wizVer" }, el("option", { textContent: "Loading..." }));
+  const mode = select("wizMode", ["survival", "creative", "adventure", "spectator"], settings["gamemode"] || "survival");
+  const diff = select("wizDiff", ["peaceful", "easy", "normal", "hard"], settings["difficulty"] || "easy");
+  const maxp = el("input", { type: "number", id: "wizMax", min: 1, max: 1000, value: settings["max-players"] || 20 });
+  const ram = el("input", { type: "range", id: "wizRam", min: 1, max: Math.min(16, total), step: 1, value: Math.min(Math.max(1, (cfg.onboarded || gb !== 2) ? Math.round(gb) : rec), Math.min(16, total)) });
+  const ramLab = el("div", { className: "small muted" });
+  const ramShow = () => ramLab.textContent = `${ram.value} GB (recommended for this PC: ${rec} GB, PC has ${Math.round((pre.ram_mb || 0) / 1024) || "?"} GB)`;
+  ram.oninput = ramShow; ramShow();
+  grid.append(field("Minecraft version", ver, "Everyone who joins must use the same version."), field("Game mode", mode),
+    field("Difficulty", diff), field("Max players", maxp), field("Memory for the server", ram), ramLab);
+  const toggle = (id, label, help, on) => { const l = html(`<label class="row" style="margin-top:12px"><span class="switch"><input type="checkbox"><span></span></span><span></span></label>`);
+    const i = l.querySelector("input"); i.id = id; i.checked = on; l.lastChild.append(el("b", { textContent: label }), el("div", { className: "small muted", textContent: help })); return l; };
+  const cracked = toggle("wizCracked", "Let TLauncher / cracked players join", "Turns off the official-account check. Pair it with the whitelist if strangers could find your server.", settings["online-mode"] === "false");
+  const wl = toggle("wizWl", "Whitelist: only players I add can join", "You add names on the Players page.", settings["white-list"] === "true");
+  body.append(grid, cracked, wl);
+  const msg = el("div", { className: "bad-msg", style: "margin-top:10px" }); body.append(msg);
+  api("versions").then(v => { ver.innerHTML = ""; for (const x of v.versions) ver.append(el("option", { value: x, textContent: x + (x === v.latest ? " (latest)" : ""), selected: x === (cfg.version || v.latest) })); })
+    .catch(() => { ver.innerHTML = ""; ver.append(el("option", { value: cfg.version || "", textContent: cfg.version || "Latest (could not load the list)" })); });
+  const ok = () => { const n = parseInt(maxp.value, 10); const good = n >= 1 && n <= 1000; msg.textContent = good ? "" : "Max players must be a number from 1 to 1000."; wizNextLabel("Next", good); return good; };
+  maxp.oninput = ok; ok();
+  W.saveWorld = async () => {
+    const c = $("#wizCracked").checked;
+    await api("settings", { "gamemode": mode.value, "difficulty": diff.value, "max-players": String(parseInt(maxp.value, 10)),
+      "online-mode": c ? "false" : "true", "enforce-secure-profile": "false", "white-list": $("#wizWl").checked ? "true" : "false" });
+    const g = parseInt(ram.value, 10);
+    await api("config", { ram_max: g + "G", ram_min: Math.min(g, 2) + "G", version: /^\d/.test(ver.value) ? ver.value : cfg.version });
+    W.picks.summary = { version: ver.value, mode: mode.value, diff: diff.value, max: maxp.value, ram: g, cracked: c, wl: $("#wizWl").checked };
+  };
+}
+
+/* 5. network */
+async function wizNet(body) {
+  body.append(el("h2", { textContent: "Your connection" }));
+  body.append(el("p", { className: "muted", textContent: "Most people can skip this. It only matters if your normal internet is slow or blocked and you use a VPN or proxy app (for example v2rayN) that is faster." }));
+  const win = cfg.windows_proxy || "";
+  let choice = cfg.proxy ? "proxy" : "normal";
+  const holder = el("div"); body.append(holder);
+  const msg = el("div", { className: "small", style: "margin-top:6px" });
+  const draw = () => {
+    holder.innerHTML = "";
+    for (const [id, title, sub] of [["normal", "Normal connection", "Use my internet directly."],
+        ["proxy", "I use a proxy / VPN app", "CraftShare uses it when it is running, and switches to your normal connection automatically when it is not."]]) {
+      const lab = el("label", { className: "opt" + (choice === id ? " sel" : "") });
+      lab.append(el("input", { type: "radio", name: "net", checked: choice === id, onchange: () => { choice = id; draw(); } }), el("b", { textContent: title }), el("div", { className: "sub2", textContent: sub }));
+      if (choice === "proxy" && id === "proxy") {
+        const more = el("div", { className: "more" });
+        const inp = el("input", { type: "text", id: "wizProxy", placeholder: "e.g. 127.0.0.1:10808", value: cfg.proxy || win || "", style: "width:100%" });
+        const test = el("button", { className: "btn sm", textContent: "Test it", style: "margin-top:8px", onclick: async () => {
+          msg.className = "small muted"; msg.textContent = "Testing...";
+          const r = await api("proxy/test", { proxy: inp.value });
+          msg.className = "small " + (r.alive && r.via_ms != null ? "ok-msg" : "muted"); msg.textContent = r.msg;
+        } });
+        more.append(inp, test, msg);
+        if (win) more.append(el("div", { className: "small muted", style: "margin-top:6px", textContent: "Windows is currently using " + win + "; filled in for you." }));
+        lab.append(more); more.onclick = e => e.stopPropagation();
+      }
+      holder.append(lab);
+    }
+  };
+  draw();
+  wizNextLabel("Next", true);
+  W.saveNet = async () => {
+    const v = choice === "proxy" ? ($("#wizProxy").value || "").trim() : "";
+    await api("config", { proxy: v });
+  };
+}
+
+/* 6. done */
+async function wizDone(body) {
+  cfg = await api("config");
+  const sm = W.picks.summary;
+  body.append(el("h2", { textContent: "All set" }));
+  const rows = [
+    ["Name", cfg.player_name], ["Minecraft", sm ? sm.version : (cfg.version || "latest")],
+    ["Playing", cfg.sync_enabled && cfg.ssh_host ? "With friends through " + cfg.ssh_host : "On this PC only"],
+    ["Memory", cfg.ram_max], ["Connection", cfg.proxy ? "Proxy " + cfg.proxy + " when it is running, otherwise normal" : "Normal"],
+  ];
+  if (sm) rows.push(["Game", `${sm.mode}, ${sm.diff}, up to ${sm.max} players${sm.cracked ? ", cracked players allowed" : ""}${sm.wl ? ", whitelist on" : ""}`]);
+  const t = el("div"); for (const [k, v] of rows) { const r = el("div", { className: "chk" }); r.append(el("span", { className: "ic ok", textContent: "✓" }), el("div", {}, el("b", { textContent: k + ": " }), document.createTextNode(String(v)))); t.append(r); }
+  body.append(t, el("p", { className: "muted", textContent: "Press Finish, then Start server on the Home page. Minecraft and Java download by themselves the first time (a few minutes)." }));
+  wizNextLabel("Finish", true);
+}
+
+$("#wizBack").onclick = () => { W.step = Math.max(0, W.step - 1); wizRender(); };
+$("#wizSkip").onclick = async () => {
+  if (!await confirmDo("Skip the guide? You can run it again any time from the Setup page.", "Skip")) return;
+  await api("onboarding/finish", {}); wizLeave();
+};
+$("#wizNext").onclick = async () => {
+  const b = $("#wizNext"); b.disabled = true;
+  try {
+    if (W.step === 1) { W.picks.name = $("#wizName").value.trim(); await api("config", { player_name: W.picks.name, eula: $("#wizEula").checked }); cfg = await api("config"); }
+    else if (W.step === 2) { if (W.mode === "solo") await api("config", { sync_enabled: false }); }
+    else if (W.step === 3) await W.saveWorld();
+    else if (W.step === 4) await W.saveNet();
+    else if (W.step === 5) { await api("onboarding/finish", {}); return wizLeave(); }
+    W.step++; await wizRender();
+  } catch (e) { b.disabled = false; }
+};
+function wizLeave() { document.body.classList.remove("onboarding"); location.hash = "#home"; }
 
 /* ---------------- app updates ---------------- */
 function renderUpdateBanner() {

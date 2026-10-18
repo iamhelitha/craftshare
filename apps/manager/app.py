@@ -22,6 +22,7 @@ from pathlib import Path
 from aiohttp import web
 
 import core
+import onboarding
 import updater
 import world
 
@@ -58,7 +59,7 @@ FIELDS = [
     ("server-port", "Server port", "Port Minecraft listens on (the tunnel forwards it).",
      "int", None, "25565", "Advanced"),
 ]
-CONFIG_KEYS = ["player_name", "version", "ram_min", "ram_max", "java", "sync_enabled", "tunnel_autostart",
+CONFIG_KEYS = ["player_name", "onboarded", "version", "ram_min", "ram_max", "java", "sync_enabled", "tunnel_autostart",
                "ssh_host", "ssh_user", "ssh_port", "ssh_key", "ssh_remote_port", "ssh_bind",
                "sync_user", "sync_key", "backup_keep", "backup_max_gb", "proxy"]
 JOIN_PORT = 25566       # "join through my proxy" helper listens here
@@ -221,6 +222,8 @@ class Manager:
                 "-o", "StrictHostKeyChecking=accept-new", "-p", c["ssh_port"] or "22"]
         if c["ssh_key"]:
             args += ["-i", core.usable_key(c["ssh_key"])]
+        if core.proxy_state(c) == "down":
+            self.note("Your proxy is not running, so the normal connection is used for the tunnel.", "warning")
         args += core.ssh_proxy_args(c)
         args += ["-R", f"{c['ssh_bind'] or '0.0.0.0'}:{c['ssh_remote_port']}:localhost:{port}",
                  f"{c['ssh_user']}@{c['ssh_host']}"]
@@ -425,13 +428,19 @@ class Manager:
 
     async def _join_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         c = self.cfg
+        host, port = c["ssh_host"], int(c["ssh_remote_port"] or 25565)
         try:
-            r2, w2 = await core.socks_open(c["ssh_host"], int(c["ssh_remote_port"] or 25565),
-                                           core.parse_proxy(c["proxy"]))
-        except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError) as e:
-            self.note(f"Could not reach the server through the proxy: {e}", "error")
-            writer.close()
-            return
+            proxy = core.active_proxy(c)
+            if not proxy:
+                raise OSError("proxy is not running")
+            r2, w2 = await core.socks_open(host, port, proxy)
+        except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError):
+            try:                                       # proxy down or failing: normal connection
+                r2, w2 = await asyncio.wait_for(asyncio.open_connection(host, port), 15)
+            except (OSError, asyncio.TimeoutError) as e:
+                self.note(f"Could not reach the server: {e}", "error")
+                writer.close()
+                return
 
         async def pump(src: asyncio.StreamReader, dst: asyncio.StreamWriter) -> None:
             try:
@@ -445,10 +454,19 @@ class Manager:
 
         await asyncio.gather(pump(reader, w2), pump(r2, writer))
 
+    # ------------------------------------------------------------ first-run guide
+    def needs_onboarding(self) -> bool:
+        """The guide shows once for a brand new install. Existing setups (a server already downloaded, or a name
+        and EULA already set) are not interrupted; they can still open it from the Setup page."""
+        c = self.cfg
+        if c["onboarded"]:
+            return False
+        return not ((core.SERVER_DIR / "server.jar").exists() or (c["player_name"] and core.eula_accepted()))
+
     # ------------------------------------------------------------ app updates
     async def check_update(self) -> dict | None:
         try:
-            self.update = await asyncio.to_thread(updater.check, core.parse_proxy(self.cfg["proxy"]))
+            self.update = await asyncio.to_thread(updater.check, core.active_proxy(self.cfg))
             self.update_error = ""
         except Exception as e:                     # offline, rate-limited, no release yet...
             self.update_error = str(e)
@@ -479,7 +497,7 @@ class Manager:
             self.note(f"You already have the newest version ({core.APP_VERSION}).", "success")
             return
         new = await asyncio.to_thread(updater.download_and_verify, self.update,
-                                      core.parse_proxy(self.cfg["proxy"]), self._prog, self._step_cb)
+                                      core.active_proxy(self.cfg), self._prog, self._step_cb)
         self.progress = None
         self._idle_or_raise()                      # nobody pressed Start while it downloaded
         updater.swap(new, core.APP_VERSION, target)
@@ -504,7 +522,7 @@ class Manager:
             if c["ssh_host"]:
                 try:
                     result = await asyncio.to_thread(world.mc_ping, c["ssh_host"], int(c["ssh_remote_port"] or 25565),
-                                                     core.parse_proxy(c["proxy"]))
+                                                     core.active_proxy(c))
                 except Exception:
                     result = None
             self.ready, self.public = result is not None, result
@@ -545,11 +563,21 @@ class Manager:
             if kind == "toggle":
                 v = "true" if v.lower() in ("true", "1", "on") else "false"
             elif kind == "int":
-                v = v if v.isdigit() else default
+                low, high = {"max-players": (1, 1000), "view-distance": (2, 32), "server-port": (1024, 65535)}.get(
+                    k, (0, 10 ** 9))
+                v = v if v.isdigit() and low <= int(v) <= high else str(self.props().get(k, default))
+                if not (v.isdigit() and low <= int(v) <= high):
+                    v = default
             elif kind == "choice" and v not in opts:
                 v = default
-            elif kind == "text" and k != "level-seed" and not v:
-                v = default
+            elif kind == "text":
+                v = " ".join(v.split())[:120 if k == "motd" else 64]           # one line, bounded
+                if k == "level-name" and not onboarding.valid_level_name(v):
+                    v = self.props().get(k, default)                           # never a path like ../x
+                    if not onboarding.valid_level_name(v):
+                        v = default
+                elif k == "motd" and not v:
+                    v = default
             updates[k] = v
         if updates["hardcore"] == "true":
             updates["difficulty"] = "hard"   # the game forces this anyway
@@ -575,6 +603,25 @@ class Manager:
             if not re.fullmatch(r"\d+[MG]", new[k]):
                 raise ValueError("Memory must look like 2G or 512M")
         new["java"] = new["java"] or "java"
+        changed = {k for k in values if k in CONFIG_KEYS and str(values[k]).strip() != str(self.cfg.get(k))}
+        if "player_name" in changed and new["player_name"] and not onboarding.valid_name(new["player_name"]):
+            raise ValueError("Your name can use letters, numbers, _ and - only (up to 24 characters, no spaces).")
+        if changed & {"ram_min", "ram_max"}:
+            lo, hi, total = onboarding.mem_mb(new["ram_min"]), onboarding.mem_mb(new["ram_max"]), onboarding.system_ram_mb()
+            if lo < 256 or hi < 512:
+                raise ValueError("Memory is too small. Use at least 1G for the server.")
+            if lo > hi:
+                raise ValueError("The minimum memory cannot be bigger than the maximum.")
+            if total and hi > total:
+                raise ValueError(f"This PC has {total // 1024} GB of memory; the server cannot use {new['ram_max']}.")
+        for k, label in (("ssh_port", "SSH port"), ("ssh_remote_port", "Public Minecraft port")):
+            if k in changed and new[k] and not onboarding.valid_port(new[k]):
+                raise ValueError(f"{label} must be a number from 1 to 65535.")
+        if "ssh_host" in changed and new["ssh_host"] and not onboarding.valid_host(new["ssh_host"]):
+            raise ValueError("The server address looks wrong. Use an IP address or a name like play.example.com.")
+        for k, label in (("ssh_user", "tunnel"), ("sync_user", "shared-world")):
+            if k in changed and new[k] and not onboarding.USER_RE.fullmatch(new[k]):
+                raise ValueError(f"The {label} user name looks wrong (lowercase letters, numbers, _ and -).")
         if new["proxy"] and not core.parse_proxy(new["proxy"]):
             raise ValueError("Proxy must look like 127.0.0.1:10808 (or leave it empty)")
         if not (new["backup_keep"].isdigit() and 1 <= int(new["backup_keep"]) <= 100):
@@ -658,6 +705,7 @@ def make_app(mgr: Manager, token: str) -> web.Application:
             "sync": mgr.sync_on(), "online": sorted(mgr.online), "name": c["player_name"],
             "ready": mgr.ready, "app_version": core.APP_VERSION, "update": mgr.update_available(),
             "update_required": mgr.update_required, "restarting": mgr.relaunch,
+            "onboarding": mgr.needs_onboarding(), "proxy_state": core.proxy_state(c),
             "eula": core.eula_accepted(), "version": c["version"],
             "address": f"{c['ssh_host']}:{c['ssh_remote_port']}" if c["ssh_host"] else "",
             "join_proxy": f"localhost:{JOIN_PORT}" if mgr.join_server else "",
@@ -774,7 +822,7 @@ def make_app(mgr: Manager, token: str) -> web.Application:
 
     # ---- friends / invites (talks to mc-hub on the VPS)
     def hub_proxy():
-        return core.parse_proxy(mgr.cfg["proxy"])
+        return core.active_proxy(mgr.cfg)
 
     async def hub_admin(method: str, path: str, data: dict | None = None) -> dict:
         h = core.load_hub()
@@ -893,6 +941,21 @@ def make_app(mgr: Manager, token: str) -> web.Application:
         if not updater.can_roll_back():
             return fail("There is no previous version to go back to.")
         mgr.run_task("Going back to the previous version", mgr.rollback_flow())
+        return ok()
+
+    # ---- first-run guide
+    @routes.get("/api/precheck")
+    async def precheck(request):
+        return web.json_response(await asyncio.to_thread(onboarding.precheck, mgr.cfg, mgr.server.running))
+
+    @routes.post("/api/proxy/test")
+    async def proxy_test(request):
+        text = str((await body(request)).get("proxy", "")).strip()
+        return web.json_response(await asyncio.to_thread(onboarding.proxy_test, mgr.cfg, text))
+
+    @routes.post("/api/onboarding/finish")
+    async def onboarding_finish(request):
+        mgr.save_config({"onboarded": True})
         return ok()
 
     @routes.get("/api/versions")

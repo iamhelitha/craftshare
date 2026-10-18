@@ -61,6 +61,13 @@ everything after offering a backup download. Details: [docs/vps-setup.md](docs/v
 2. Open the app, type your name in **Setup**, paste the code under **Join a server**, press **Join**.
 3. Go to **Home** and press **Start server** to host, or just join the address shown there in Minecraft.
 
+## First start
+
+A short setup guide runs the first time: it checks your PC (Java, memory, disk, ports, internet, the tools needed
+for sharing), asks your name, whether you play alone or with friends (invite code or owner code), the world
+settings, and whether you use a proxy/VPN app. Everything it asks is checked, and you can change it later or run
+the guide again from **Setup**. If a proxy is set but not running, CraftShare simply uses your normal connection.
+
 ## Updates
 
 The app checks GitHub for new releases. When one is out, Home shows a banner and **Setup > App updates** has an

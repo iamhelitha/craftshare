@@ -13,6 +13,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -84,6 +85,7 @@ DEFAULT_CONFIG = {
     "sync_user": "mcsync",
     "sync_key": "",
     "player_name": "",
+    "onboarded": False,        # the first-run setup guide was finished (or skipped)
     "proxy": "",               # optional SOCKS5 proxy (e.g. v2rayN 127.0.0.1:10808) for all VPS traffic
     "backup_keep": "5",        # automatic backups to keep
     "backup_max_gb": "5",      # space limit for all backups together
@@ -451,7 +453,12 @@ async def socks_open(host: str, port: int, proxy: tuple[str, int]):
 def socks_pipe_main(host: str, port: str, proxy: str) -> None:
     """Entry point for ssh's ProxyCommand: bridge stdin/stdout to host:port through the proxy."""
     import threading
-    s = socks_connect(host, int(port), parse_proxy(proxy))
+    try:
+        s = socks_connect(host, int(port), parse_proxy(proxy), timeout=8)
+    except OSError:
+        # The proxy (e.g. v2rayN) is not running or cannot reach the server: use the normal connection.
+        s = socket.create_connection((host, int(port)), timeout=15)
+        s.settimeout(None)
 
     def upstream():
         try:
@@ -469,9 +476,42 @@ def socks_pipe_main(host: str, port: str, proxy: str) -> None:
         sys.stdout.buffer.flush()
 
 
+_proxy_seen: dict[tuple[str, int], tuple[float, bool]] = {}
+
+
+def proxy_alive(proxy: tuple[str, int] | None, max_age: float = 5.0) -> bool:
+    """True if something accepts connections on the proxy address (a stopped v2rayN does not).
+    The answer is remembered for a few seconds so busy loops do not hammer the port."""
+    if not proxy:
+        return False
+    now = time.time()
+    seen = _proxy_seen.get(proxy)
+    if seen and now - seen[0] < max_age:
+        return seen[1]
+    try:
+        with socket.create_connection(proxy, timeout=0.8):
+            ok = True
+    except OSError:
+        ok = False
+    _proxy_seen[proxy] = (now, ok)
+    return ok
+
+
+def active_proxy(cfg: dict) -> tuple[str, int] | None:
+    """The proxy to use right now: the configured one if it is running, otherwise None (normal network)."""
+    p = parse_proxy(cfg.get("proxy", ""))
+    return p if p and proxy_alive(p) else None
+
+
+def proxy_state(cfg: dict) -> str:
+    """'off' (none configured), 'using' (configured and running) or 'down' (configured but not running)."""
+    p = parse_proxy(cfg.get("proxy", ""))
+    return "off" if not p else "using" if proxy_alive(p) else "down"
+
+
 def ssh_proxy_args(cfg: dict) -> list[str]:
-    """Extra ssh/sftp options that route the connection through the configured proxy."""
-    if not parse_proxy(cfg.get("proxy", "")):
+    """Extra ssh/sftp options that route the connection through the configured proxy, if it is running."""
+    if not active_proxy(cfg):
         return []
     if getattr(sys, "frozen", False):
         cmd = f'"{sys.executable}" --socks-pipe %h %p {cfg["proxy"].strip()}'
