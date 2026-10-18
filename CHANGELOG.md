@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1](https://github.com/iamhelitha/craftshare/compare/v0.3.0...v0.3.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **hub:** run sshd -t by absolute path, create /run/sshd and show the real error when it fails ([4623c10](https://github.com/iamhelitha/craftshare/commit/4623c1024965382818991cbcd61d4ab63dc4fee5))
+* **tests:** update admin token in test_hub.py to use a more secure test secret ([f33030b](https://github.com/iamhelitha/craftshare/commit/f33030b2860436239ad7b65c960354277b6a6657))
+* **tests:** use one ADMIN constant in test_hub.py (rename was half applied) ([b52a359](https://github.com/iamhelitha/craftshare/commit/b52a359a4ccaf0403499e038ce559c2f2fd9d9bf))
+
 ## [0.3.0](https://github.com/iamhelitha/craftshare/compare/v0.2.0...v0.3.0) (2026-10-18)
 
 
