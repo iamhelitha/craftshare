@@ -858,9 +858,23 @@ def gateway_set() -> bool:
     return bool(re.search(r"^\s*GatewayPorts\s+(yes|clientspecified)", text, re.I | re.M))
 
 
+def sshd_test() -> tuple[bool, str]:
+    """Run `sshd -t` the way OpenSSH wants it: absolute path, and the privilege-separation folder present
+    (on systems where ssh starts on demand, /run/sshd may not exist yet and the test fails for that alone)."""
+    exe = shutil.which("sshd") or next((p for p in ("/usr/sbin/sshd", "/sbin/sshd") if Path(p).exists()), "")
+    if not exe:
+        return False, "sshd was not found on this server"
+    if not TEST_MODE:
+        Path("/run/sshd").mkdir(mode=0o755, exist_ok=True)
+    r = sh(str(Path(exe).resolve()), "-t", check=False)
+    return r.returncode == 0, (r.stderr or r.stdout).strip()
+
+
 def reload_sshd() -> None:
-    if sh("sshd", "-t", check=False).returncode:
-        raise SystemExit("sshd configuration test failed; nothing reloaded. Check /etc/ssh/sshd_config.")
+    ok, why = sshd_test()
+    if not ok:
+        raise SystemExit(f"sshd configuration test failed, so nothing was reloaded or changed.\n"
+                         f"Reason: {why or 'no message'}\nCheck /etc/ssh/sshd_config and the files in /etc/ssh/sshd_config.d/.")
     if sh("systemctl", "reload", "ssh", check=False).returncode:
         sh("systemctl", "reload", "sshd", check=False)
 
@@ -1137,7 +1151,7 @@ def cmd_uninstall(_args) -> None:
     if new != lines:
         shutil.copy2(SSHD_CONFIG, backup)
         SSHD_CONFIG.write_text("\n".join(new) + "\n")
-        if sh("sshd", "-t", check=False).returncode:
+        if not sshd_test()[0]:
             shutil.copy2(backup, SSHD_CONFIG)
             say("  [red]sshd config test failed; GatewayPorts left as it was[/]")
         else:
