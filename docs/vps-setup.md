@@ -3,7 +3,7 @@
 You need a Linux VPS where you can log in as root. This does not touch 3x-ui/Xray or other software.
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/OWNER/REPO/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/iamhelitha/craftshare/main/install.sh)
 ```
 
 It installs `mc-hub` (about 20 MB of RAM), prints an **owner code**, and creates two locked-down accounts:

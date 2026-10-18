@@ -1,4 +1,4 @@
-# Minecraft Server Manager
+# CraftShare (Minecraft Server Manager)
 
 Host a vanilla Minecraft server from your own Windows PC, let friends join through your VPS, and share one
 world so anyone in the group can host when they want: one at a time, with the latest progress.
@@ -23,7 +23,7 @@ uploaded first.
 Log in to your Linux VPS as root and run:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/OWNER/REPO/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/iamhelitha/craftshare/main/install.sh)
 ```
 
 It prints an **owner code**. In the app open **Setup > Friends & access > I own the VPS** and paste it.

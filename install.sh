@@ -1,19 +1,18 @@
 #!/bin/bash
-# Minecraft Server Manager - VPS installer. Run as root:
-#   bash <(curl -Ls https://raw.githubusercontent.com/OWNER/REPO/main/install.sh)
+# CraftShare - VPS installer. Run as root:
+#   bash <(curl -Ls https://raw.githubusercontent.com/iamhelitha/craftshare/main/install.sh)
 #   bash <(curl -Ls .../install.sh) v1.2.0        install a specific release
 #   bash <(curl -Ls .../install.sh) uninstall     remove the service (keeps world + friends)
 # Installs mc-hub: a tiny service that lets friends join with an invite code. It never touches
 # 3x-ui / Xray or any existing world files, and running it again just updates the hub.
 set -euo pipefail
 
-REPO="${MC_REPO:-OWNER/REPO}"
+REPO="${MC_REPO:-iamhelitha/craftshare}"
 ARG="${1:-latest}"
 
 red() { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 [ "$(id -u)" = 0 ] || { red "Please run this as root (try: sudo -i, then run the command again)."; exit 1; }
 [ "$(uname -s)" = Linux ] || { red "This installer is for Linux servers."; exit 1; }
-[ "$REPO" != "OWNER/REPO" ] || { red "This copy of install.sh has no repository set (MC_REPO)."; exit 1; }
 
 if ! command -v python3 >/dev/null; then
   echo "Installing python3..."
