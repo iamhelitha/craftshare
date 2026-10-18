@@ -33,8 +33,12 @@ Log in to your Linux VPS as root and run:
 bash <(curl -Ls https://raw.githubusercontent.com/iamhelitha/craftshare/main/install.sh)
 ```
 
-It prints an **owner code**. In the app open **Setup > Friends & access > I own the VPS** and paste it.
-If your provider has a firewall panel, open TCP **25565** and **8766**. Details: [docs/vps-setup.md](docs/vps-setup.md).
+It asks before changing the firewall, then prints an **owner code**. In the app open **Setup > Friends & access >
+I own the VPS** and paste it. If your provider has a firewall panel, open TCP **25565** and **8766** there.
+
+Later, on the VPS, type **`mc-hub`** to see who is hosting, your friends, the shared world and blocked IPs.
+`mc-hub update` updates safely (checksum-verified, rolls back on failure) and `mc-hub uninstall` removes
+everything after offering a backup download. Details: [docs/vps-setup.md](docs/vps-setup.md).
 
 ## Friends: join
 

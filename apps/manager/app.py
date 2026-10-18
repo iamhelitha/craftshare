@@ -717,17 +717,21 @@ def make_app(mgr: Manager, token: str) -> web.Application:
         h = core.load_hub()
         if not h:
             raise RuntimeError("This PC is not connected as the owner yet.")
+        if not h.get("fp"):
+            raise RuntimeError("Reconnect as the owner: paste the owner code from 'mc-hub owner-code' again.")
         return await asyncio.to_thread(core.hub_call, h["host"], h["port"], method, path, data,
-                                       h["token"], hub_proxy())
+                                       h["token"], hub_proxy(), 15, h["fp"])
 
     @routes.get("/api/hub")
     async def hub_state(request):
         h = core.load_hub()
-        out = {"owner": bool(h), "host": h.get("host", ""), "friends": [], "legacy": 0, "error": ""}
+        out = {"owner": bool(h), "host": h.get("host", ""), "friends": [], "legacy": 0, "error": "",
+               "hub_version": ""}
         if h:
             try:
                 r = await hub_admin("GET", "/admin/friends")
                 out["friends"], out["legacy"] = r["friends"], r["legacy"]
+                out["hub_version"] = r.get("version", "")
             except RuntimeError as e:
                 out["error"] = str(e)
         return web.json_response(out)
@@ -736,11 +740,12 @@ def make_app(mgr: Manager, token: str) -> web.Application:
     async def hub_owner(request):
         b = await body(request)
         try:
-            host, port, token = core.split_hub(str(b.get("code", "")))
-            await asyncio.to_thread(core.hub_call, host, port, "GET", "/admin/friends", None, token, hub_proxy())
+            host, port, token, fp = core.split_hub(str(b.get("code", "")))
+            await asyncio.to_thread(core.hub_call, host, port, "GET", "/admin/friends", None, token,
+                                    hub_proxy(), 15, fp)
         except (ValueError, RuntimeError) as e:
             return fail(str(e))
-        core.save_hub({"host": host, "port": port, "token": token})
+        core.save_hub({"host": host, "port": port, "token": token, "fp": fp})
         if not mgr.cfg["ssh_host"]:
             mgr.save_config({"ssh_host": host})
         return ok()
@@ -752,7 +757,7 @@ def make_app(mgr: Manager, token: str) -> web.Application:
         except RuntimeError as e:
             return fail(str(e))
         h = core.load_hub()
-        return ok(code=r["code"], host=h["host"], text=f"{h['host']}:{h['port']}/{r['code']}")
+        return ok(code=r["code"], host=h["host"], text=f"{h['host']}:{h['port']}/{r['code']}/{h['fp'][:20]}")
 
     @routes.post("/api/hub/remove")
     async def hub_remove(request):
@@ -770,11 +775,11 @@ def make_app(mgr: Manager, token: str) -> web.Application:
         b = await body(request)
         name = str(b.get("name", "")).strip()
         try:
-            host, port, code = core.split_hub(str(b.get("invite", "")))
+            host, port, code, fp = core.split_hub(str(b.get("invite", "")))
             key = await asyncio.to_thread(core.own_key)
             pub = Path(key + ".pub").read_text().strip()
             r = await asyncio.to_thread(core.hub_call, host, port, "POST", "/enroll",
-                                        {"code": code, "name": name, "pubkey": pub}, "", hub_proxy())
+                                        {"code": code, "name": name, "pubkey": pub}, "", hub_proxy(), 15, fp)
             mgr.save_config({"ssh_host": host, "ssh_user": r["ssh_user"], "ssh_port": str(r["ssh_port"]),
                              "ssh_remote_port": str(r["remote_port"]), "ssh_key": key, "sync_user": r["sync_user"],
                              "sync_key": key, "sync_enabled": True, "player_name": name})

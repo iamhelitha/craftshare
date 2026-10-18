@@ -36,6 +36,9 @@ jobs:
           cp apps/manager/dist/MinecraftManager.exe out/
           cp apps/manager/MinecraftServerManager.zip "out/MinecraftServerManager-${{ inputs.tag }}.zip"
           cp apps/hub/mc_hub.py out/
+          ver="${{ inputs.tag }}"; ver="${ver#v}"
+          sed -i "s/^APP_VERSION = \"dev\"/APP_VERSION = \"$ver\"/" out/mc_hub.py
+          grep -q "^APP_VERSION = \"$ver\"" out/mc_hub.py    # mc-hub update relies on this
           cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Attest build provenance
         continue-on-error: true      # not available on private repos of free accounts

@@ -2,10 +2,11 @@
 # CraftShare - VPS installer. Run as root:
 #   bash <(curl -Ls https://raw.githubusercontent.com/iamhelitha/craftshare/main/install.sh)
 #   bash <(curl -Ls .../install.sh) v1.2.0        install a specific release
-#   bash <(curl -Ls .../install.sh) uninstall     remove the service (keeps world + friends)
+#   bash <(curl -Ls .../install.sh) uninstall     remove everything (offers a world backup download first)
+#   Afterwards, manage it with the command:  mc-hub   (mc-hub help; mc-hub update; mc-hub uninstall)
 #   MC_FIREWALL=yes bash <(curl -Ls .../install.sh)   open the firewall ports without asking
 # Installs mc-hub: a tiny service that lets friends join with an invite code. It never touches
-# 3x-ui / Xray or any existing world files, and running it again just updates the hub.
+# 3x-ui / Xray or any existing world files, and running it again just updates the hub (keeps friends and world).
 set -euo pipefail
 
 REPO="${MC_REPO:-iamhelitha/craftshare}"
@@ -41,7 +42,7 @@ if [ -z "$want" ] || [ "$want" != "$have" ]; then
 fi
 
 if [ "$ARG" = uninstall ]; then
-  python3 "$TMP/mc_hub.py" uninstall
+  python3 "$TMP/mc_hub.py" uninstall < /dev/tty
   exit 0
 fi
 

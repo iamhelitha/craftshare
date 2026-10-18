@@ -341,14 +341,14 @@ details summary { cursor: pointer; font-weight: 600; }
         <div id="joinBox">
           <div class="label">Join a server</div>
           <div class="help">Got an invite from the server owner? Paste it here. This PC makes its own key; nothing secret is sent or shared.</div>
-          <div class="row" style="margin-top:8px"><input type="text" id="inviteIn" placeholder="e.g. 1.2.3.4:8766/ABCD-EFGH-JKLM"><button class="btn primary" id="btnJoin">Join</button></div>
+          <div class="row" style="margin-top:8px"><input type="text" id="inviteIn" placeholder="e.g. 1.2.3.4:8766/ABCD-EFGH-JKLM/1a2b3c4d..."><button class="btn primary" id="btnJoin">Join</button></div>
           <div class="small muted" id="joinDone" style="margin-top:6px"></div>
         </div>
         <details id="ownerBox" style="margin-top:14px">
           <summary>I own the VPS (invite friends)</summary>
           <div id="ownerConnect">
-            <p class="small muted">Run the one-time install on your VPS, then paste the owner code it prints here.</p>
-            <div class="row"><input type="text" id="ownerIn" placeholder="owner code, e.g. 1.2.3.4:8766/xxxxxxxx"><button class="btn" id="btnOwner">Connect</button></div>
+            <p class="small muted">Run the one-line installer on your VPS (see the README), then paste the owner code it prints here. Lost it? Run <code>mc-hub owner-code</code> on the VPS.</p>
+            <div class="row"><input type="text" id="ownerIn" placeholder="owner code from the VPS (mc-hub owner-code)"><button class="btn" id="btnOwner">Connect</button></div>
           </div>
           <div id="ownerPanel" class="hidden">
             <div class="row" style="margin:10px 0"><button class="btn primary" id="btnInvite">Invite a friend</button><span class="small muted" id="hubErr"></span></div>
@@ -810,7 +810,7 @@ async function loadHub() {
   const h = await api("hub").catch(() => null); if (!h) return;
   $("#ownerConnect").classList.toggle("hidden", h.owner);
   $("#ownerPanel").classList.toggle("hidden", !h.owner);
-  $("#hubErr").textContent = h.error || "";
+  $("#hubErr").textContent = h.error || (h.hub_version ? "Hub version " + h.hub_version : "");
   const box = $("#friendList"); box.innerHTML = "";
   const addRow = (label, sub, onRemove) => {
     const r = document.createElement("div"); r.className = "field";

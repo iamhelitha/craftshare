@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import os
 import platform
 import re
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import urllib.request
@@ -211,22 +213,46 @@ def own_key() -> str:
     return str(key)
 
 
-def split_hub(text: str) -> tuple[str, int, str]:
-    """'host[:port]/secret' -> (host, port, secret). Also accepts 'host secret'."""
+def split_hub(text: str) -> tuple[str, int, str, str]:
+    """'host[:port]/secret/fingerprint' -> (host, port, secret, fingerprint).
+
+    The fingerprint (hex, start of the hub certificate's SHA-256) is how this app knows it is talking
+    to the real hub and not something in between: the hub's certificate is self-signed."""
     text = text.strip()
-    m = re.fullmatch(r"([\w.\-]+)(?::(\d{1,5}))?[/\s]+(\S+)", text)
+    m = re.fullmatch(r"([\w.\-]+)(?::(\d{1,5}))?/([\w-]+)/([0-9a-fA-F]{16,64})", text)
     if not m:
-        raise ValueError("That does not look right. Expected something like  1.2.3.4:8766/CODE")
-    return m.group(1), int(m.group(2) or HUB_PORT), m.group(3)
+        raise ValueError("That does not look right. Expected something like  1.2.3.4:8766/CODE/1a2b3c...  "
+                         "(copy the whole line)")
+    return m.group(1), int(m.group(2) or HUB_PORT), m.group(3), m.group(4).lower()
+
+
+def _pinned_tls(sock: socket.socket, host: str, fp: str) -> ssl.SSLSocket:
+    """TLS to the hub, trusting exactly the certificate whose fingerprint came with the code.
+
+    The hub's certificate is self-signed, so the usual CA check cannot apply; instead the certificate is
+    pinned by its SHA-256 (at least 64 bits of it) and checked before any secret is sent."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE          # replaced by the pin check right below
+    tls = ctx.wrap_socket(sock, server_hostname=host)
+    der = tls.getpeercert(binary_form=True) or b""
+    if len(fp) < 16 or not hmac.compare_digest(hashlib.sha256(der).hexdigest()[:len(fp)], fp):
+        tls.close()
+        raise RuntimeError("The server's identity does not match the code (wrong address, a reinstalled hub, "
+                           "or someone in between). Ask the owner for a fresh code.")
+    return tls
 
 
 def hub_call(host: str, port: int, method: str, path: str, body: dict | None = None,
-             token: str = "", proxy: tuple[str, int] | None = None, timeout: float = 15) -> dict:
+             token: str = "", proxy: tuple[str, int] | None = None, timeout: float = 15, fp: str = "") -> dict:
     import http.client
     conn = http.client.HTTPConnection(host, port, timeout=timeout)
     try:
-        if proxy:
-            conn.sock = socks_connect(host, port, proxy, timeout=timeout)
+        raw = socks_connect(host, port, proxy, timeout=timeout) if proxy else \
+            socket.create_connection((host, port), timeout=timeout)
+        raw.settimeout(timeout)
+        conn.sock = _pinned_tls(raw, host, fp)
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
