@@ -3,6 +3,7 @@
 #   bash <(curl -Ls https://raw.githubusercontent.com/iamhelitha/craftshare/main/install.sh)
 #   bash <(curl -Ls .../install.sh) v1.2.0        install a specific release
 #   bash <(curl -Ls .../install.sh) uninstall     remove the service (keeps world + friends)
+#   MC_FIREWALL=yes bash <(curl -Ls .../install.sh)   open the firewall ports without asking
 # Installs mc-hub: a tiny service that lets friends join with an invite code. It never touches
 # 3x-ui / Xray or any existing world files, and running it again just updates the hub.
 set -euo pipefail
@@ -39,4 +40,24 @@ if [ -z "$want" ] || [ "$want" != "$have" ]; then
   red "Checksum mismatch - download is not what the release published. Aborting."; exit 1
 fi
 
-if [ "$ARG" = uninstall ]; then python3 "$TMP/mc_hub.py" uninstall; else python3 "$TMP/mc_hub.py" install; fi
+if [ "$ARG" = uninstall ]; then
+  python3 "$TMP/mc_hub.py" uninstall
+  exit 0
+fi
+
+# Firewall: ask first. MC_FIREWALL=yes|no skips the question (for scripts).
+FW="${MC_FIREWALL:-}"
+if [ -z "$FW" ]; then
+  if [ -r /dev/tty ]; then
+    echo
+    echo "Friends need two TCP ports open on this server: 25565 (Minecraft) and 8766 (invites)."
+    printf 'Add these rules to the server firewall (ufw/firewalld) now? [y/N] '
+    read -r FW < /dev/tty || FW=no
+  else
+    FW=no
+  fi
+fi
+case "$FW" in
+  y|Y|yes|YES) python3 "$TMP/mc_hub.py" install --firewall ;;
+  *)           python3 "$TMP/mc_hub.py" install --no-firewall ;;
+esac

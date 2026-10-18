@@ -57,6 +57,25 @@ def main() -> None:
         assert call("POST", "/admin/remove", {"name": "bob"}, "secret")[0] == 200
         assert "AAAAOLD" in mc_hub.AUTH["mcsync"].read_text(), "old keys must survive"
         assert "mc-hub:bob" not in mc_hub.AUTH["mctunnel"].read_text()
+
+        # oversized / broken bodies are refused without being read
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/enroll", method="POST", data=b"x" * 10,
+                                     headers={"Content-Length": "999999"})
+        try:
+            urllib.request.urlopen(req)
+            raise AssertionError("huge body accepted")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
+        except OSError:
+            pass                                     # server closed the connection: also fine
+
+        # brute force: wrong owner tokens get this IP blocked, then everything answers 429
+        for i in range(mc_hub.Limiter.FAIL_LIMIT):
+            if call("GET", "/admin/friends", token=f"guess{i}")[0] == 429:
+                break
+        status, body = call("GET", "/info")
+        assert status == 429 and "Try again" in body["error"], (status, body)
+        assert call("GET", "/admin/friends", token="secret")[0] == 429, "even the right token waits while blocked"
         print("hub tests passed")
     finally:
         proc.terminate()

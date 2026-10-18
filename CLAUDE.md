@@ -45,7 +45,8 @@ A local web app (aiohttp backend + one static page) that downloads, configures a
 
 ## Invites (mc-hub)
 
-- `apps/hub/mc_hub.py` is a stdlib-only service for the VPS (port 8766, systemd `mc-hub`, ~20 MB). `install` creates `mctunnel`/`mcsync`, GatewayPorts, ufw rules, the service, and prints the owner code `host:port/token`. State is `/etc/mc-hub/state.json`. `MC_HUB_ROOT`/`MC_HUB_PORT` redirect it for tests (use `cygpath -m` paths on Windows).
+- `apps/hub/mc_hub.py` is a stdlib-only service for the VPS (port 8766, systemd `mc-hub`, ~20 MB, sandboxed unit). `install` creates `mctunnel`/`mcsync`, GatewayPorts, the service, opens ufw/firewalld only with `--firewall` (install.sh asks via /dev/tty, or `MC_FIREWALL`), and prints the owner code `host:port/token`. State is `/etc/mc-hub/state.json`. `MC_HUB_ROOT`/`MC_HUB_PORT` redirect it for tests (use `cygpath -m` paths on Windows).
 - Friend flow (`/api/hub/join`): the app makes its own ed25519 key (`core.own_key`, `DATA_DIR/identity`), sends only the public key + a one-time 24 h invite code to `/enroll`; the hub appends it to both `authorized_keys` tagged `mc-hub:<name>`. Lines without that tag (the old shared keys) are never touched, only removed explicitly via `/admin/remove-legacy`.
 - Owner flow: the owner code is stored in `DATA_DIR/hub.json` (never committed); Setup > Friends & access creates invites and removes friends.
 - Secrets policy: no keys or server address in the repo or the friend zip (`package.py` default); `.env` (gitignored) holds `VPS_HOST` for the legacy `--with-keys` zip only.
+- Hub abuse limits live in `mc_hub.Limiter` (per-IP request cap, failed-attempt blocks, global invite-guess pause, bounded tracking) and `mc_hub.Server` (32 connection slots); `Handler.timeout` drops slow clients. Keep `test_hub.py` passing; it checks the block.

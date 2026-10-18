@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """mc-hub: tiny service that runs on the VPS and lets friends join without anyone touching a shell.
 
-  sudo python3 mc_hub.py install     one-time setup (accounts, firewall, systemd service)
+  sudo python3 mc_hub.py install     one-time setup (accounts, systemd service); asks about the firewall
+                                     (or pass --firewall / --no-firewall)
   sudo python3 mc_hub.py reset-token print a new owner code (use if you lost it)
   sudo python3 mc_hub.py uninstall   remove the service (keeps the world, accounts and friends)
   python3 mc_hub.py serve            run the service in the foreground (systemd does this)
@@ -39,8 +40,70 @@ TAG = "mc-hub:"
 KEY_RE = re.compile(r"ssh-ed25519 [A-Za-z0-9+/]{60,120}={0,2}")
 NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,24}")
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+MAX_INVITES = 20                 # open invites at once
 _lock = threading.Lock()
-_fails: dict[str, list[float]] = {}
+
+
+# ------------------------------------------------------------------ rate limits
+class Limiter:
+    """Keeps brute force and floods cheap for the VPS. All limits are per client IP unless noted.
+
+    - any request:        REQ_LIMIT per minute, then 429 for the rest of that minute
+    - wrong code / token: FAIL_LIMIT within FAIL_WINDOW blocks that IP for BLOCK_FOR seconds
+    - all IPs together:   GLOBAL_FAILS wrong invite codes per hour pause /enroll (stops distributed guessing;
+                          the owner's valid token still works)
+    A 12-character invite has ~60 bits of randomness, so guessing is hopeless even without these limits.
+    """
+    REQ_LIMIT, FAIL_LIMIT, FAIL_WINDOW, BLOCK_FOR, GLOBAL_FAILS = 60, 5, 900, 900, 100
+    MAX_TRACKED = 10000              # cap memory if someone sprays from many addresses
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.reqs: dict[str, list[float]] = {}
+        self.fails: dict[str, list[float]] = {}
+        self.blocked: dict[str, float] = {}
+        self.global_fails: list[float] = []
+
+    def _prune(self, now: float) -> None:
+        if len(self.reqs) + len(self.fails) + len(self.blocked) < self.MAX_TRACKED:
+            return
+        self.reqs = {ip: t for ip, t in self.reqs.items() if t and now - t[-1] < 60}
+        self.fails = {ip: t for ip, t in self.fails.items() if t and now - t[-1] < self.FAIL_WINDOW}
+        self.blocked = {ip: until for ip, until in self.blocked.items() if until > now}
+        if len(self.reqs) + len(self.fails) + len(self.blocked) >= self.MAX_TRACKED:
+            self.reqs.clear()        # still too many: forget request counts, keep blocks
+
+    def check(self, ip: str) -> int:
+        """Seconds the client must wait, or 0 if the request may go ahead."""
+        now = time.time()
+        with self.lock:
+            self._prune(now)
+            if self.blocked.get(ip, 0) > now:
+                return int(self.blocked[ip] - now) + 1
+            recent = [t for t in self.reqs.get(ip, []) if now - t < 60]
+            recent.append(now)
+            self.reqs[ip] = recent[-self.REQ_LIMIT - 1:]
+            return 60 if len(recent) > self.REQ_LIMIT else 0
+
+    def fail(self, ip: str, invite: bool = False) -> None:
+        now = time.time()
+        with self.lock:
+            recent = [t for t in self.fails.get(ip, []) if now - t < self.FAIL_WINDOW] + [now]
+            self.fails[ip] = recent
+            if len(recent) >= self.FAIL_LIMIT:
+                self.blocked[ip] = now + self.BLOCK_FOR
+                print(f"blocked {ip} for {self.BLOCK_FOR}s after {len(recent)} failed attempts", flush=True)
+            if invite:
+                self.global_fails = [t for t in self.global_fails if now - t < 3600] + [now]
+
+    def enroll_paused(self) -> bool:
+        now = time.time()
+        with self.lock:
+            self.global_fails = [t for t in self.global_fails if now - t < 3600]
+            return len(self.global_fails) >= self.GLOBAL_FAILS
+
+
+LIMITS = Limiter()
 
 
 def sha(text: str) -> str:
@@ -94,48 +157,63 @@ def new_code() -> str:
 # ------------------------------------------------------------------ requests
 class Handler(BaseHTTPRequestHandler):
     server_version = "mc-hub"
+    timeout = 10                     # slow or idle clients are dropped (slowloris)
 
     def log_message(self, *a):       # keep systemd's journal quiet
         pass
 
-    def reply(self, status: int, data: dict) -> None:
+    @property
+    def ip(self) -> str:
+        return self.client_address[0]
+
+    def reply(self, status: int, data: dict, retry_after: int = 0) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if retry_after:
+            self.send_header("Retry-After", str(retry_after))
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
+        self.close_connection = True
 
-    def read(self) -> dict:
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > 4096:
-            return {}
+    def read(self) -> dict | None:
+        """The JSON body, or None if it is too big or broken (never reads more than 4 KB)."""
         try:
-            return json.loads(self.rfile.read(n) or b"{}")
+            n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            return {}
+            return None
+        if not 0 <= n <= 4096:
+            return None
+        try:
+            data = json.loads(self.rfile.read(n) or b"{}")
+        except (ValueError, OSError):
+            return None
+        return data if isinstance(data, dict) else None
 
-    def throttled(self, record: bool = False) -> bool:
-        ip, now = self.client_address[0], time.time()
-        recent = [t for t in _fails.get(ip, []) if now - t < 60]
-        if record:
-            recent.append(now)
-        _fails[ip] = recent
-        return len(recent) >= 10
+    def gate(self) -> bool:
+        """Apply the rate limits; True if the request was refused."""
+        wait = LIMITS.check(self.ip)
+        if wait:
+            self.reply(429, {"error": f"Too many requests. Try again in {wait} seconds."}, wait)
+        return bool(wait)
 
     def is_admin(self) -> bool:
         tok = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         st = load()
         ok = bool(tok and st["admin"] and hmac.compare_digest(sha(tok), st["admin"]))
         if not ok:
-            self.throttled(record=True)
+            LIMITS.fail(self.ip)
         return ok
 
     def do_GET(self):
+        if self.gate():
+            return
         if self.path == "/info":
             return self.reply(200, {"mc_hub": HUB_VERSION, "port": MC_PORT})
         if self.path == "/admin/friends":
-            if self.throttled() or not self.is_admin():
+            if not self.is_admin():
                 return self.reply(403, {"error": "Not allowed"})
             st = load()
             friends = [{"name": n, "added": f["added"]} for n, f in sorted(st["friends"].items())]
@@ -143,19 +221,25 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(404, {"error": "Not found"})
 
     def do_POST(self):
+        if self.gate():
+            return
         b = self.read()
-        with _lock:
-            if self.path == "/enroll":
+        if b is None:
+            return self.reply(400, {"error": "Bad request"})
+        if self.path == "/enroll":
+            if LIMITS.enroll_paused():
+                return self.reply(503, {"error": "Joining is paused for a while (too many wrong codes). "
+                                                 "Try again in an hour."}, 3600)
+            with _lock:
                 return self.enroll(b)
-            if self.path.startswith("/admin/"):
-                if self.throttled() or not self.is_admin():
-                    return self.reply(403, {"error": "Not allowed"})
+        if self.path.startswith("/admin/"):
+            if not self.is_admin():
+                return self.reply(403, {"error": "Not allowed"})
+            with _lock:
                 return self.admin(b)
         self.reply(404, {"error": "Not found"})
 
     def enroll(self, b: dict) -> None:
-        if self.throttled():
-            return self.reply(429, {"error": "Too many tries. Wait a minute."})
         code, name, key = (str(b.get(k, "")).strip() for k in ("code", "name", "pubkey"))
         key = " ".join(key.split()[:2])
         if not NAME_RE.fullmatch(name):
@@ -167,7 +251,7 @@ class Handler(BaseHTTPRequestHandler):
         st["invites"] = {h: i for h, i in st["invites"].items() if i["exp"] > now}
         inv = st["invites"].get(sha(code.upper().replace(" ", "")))
         if not inv:
-            self.throttled(record=True)
+            LIMITS.fail(self.ip, invite=True)
             return self.reply(403, {"error": "Invite code is wrong, used already, or expired."})
         if name in st["friends"]:
             return self.reply(409, {"error": f"The name '{name}' is already taken. Pick another."})
@@ -181,6 +265,9 @@ class Handler(BaseHTTPRequestHandler):
     def admin(self, b: dict) -> None:
         st = load()
         if self.path == "/admin/invite":
+            st["invites"] = {h: i for h, i in st["invites"].items() if i["exp"] > time.time()}
+            if len(st["invites"]) >= MAX_INVITES:
+                return self.reply(429, {"error": f"{MAX_INVITES} invites are still unused. Wait for some to be used or expire."})
             code = new_code()
             st["invites"][sha(code)] = {"exp": time.time() + INVITE_TTL}
             save(st)
@@ -202,8 +289,36 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(404, {"error": "Not found"})
 
 
+class Server(ThreadingHTTPServer):
+    """At most MAX_CONN connections are handled at once; extra ones are closed straight away,
+    so a flood cannot pile up threads and memory."""
+    MAX_CONN = 32
+    daemon_threads = True
+    request_queue_size = 32
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.slots = threading.BoundedSemaphore(self.MAX_CONN)
+
+    def process_request(self, request, client_address):
+        if not self.slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
+
+
 def serve() -> None:
-    srv = ThreadingHTTPServer(("0.0.0.0", HUB_PORT), Handler)
+    srv = Server(("0.0.0.0", HUB_PORT), Handler)
     print(f"mc-hub {HUB_VERSION} listening on :{HUB_PORT}", flush=True)
     srv.serve_forever()
 
@@ -226,7 +341,24 @@ def owner_code(token: str) -> str:
     return f"{ip}:{HUB_PORT}/{token}"
 
 
-def install() -> None:
+def open_firewall() -> None:
+    """Open the game port and the invite port in whichever firewall is active (ufw or firewalld).
+    ufw 'limit' also rate-limits new connections to the invite port (6 per 30 s per IP)."""
+    if shutil.which("ufw") and "Status: active" in sh("ufw", "status", check=False).stdout:
+        sh("ufw", "allow", f"{MC_PORT}/tcp")
+        sh("ufw", "limit", f"{HUB_PORT}/tcp")
+        print(f"ufw: allowed {MC_PORT}/tcp, rate-limited {HUB_PORT}/tcp.")
+    elif shutil.which("firewall-cmd") and sh("firewall-cmd", "--state", check=False).returncode == 0:
+        for port in (MC_PORT, HUB_PORT):
+            sh("firewall-cmd", "--permanent", f"--add-port={port}/tcp")
+        sh("firewall-cmd", "--reload")
+        print(f"firewalld: opened {MC_PORT}/tcp and {HUB_PORT}/tcp.")
+    else:
+        print("No active firewall (ufw/firewalld) found, so nothing to change on this server.")
+    print(f"If your VPS provider has a firewall in its web panel, open TCP {MC_PORT} and {HUB_PORT} there too.")
+
+
+def install(firewall: bool = False) -> None:
     if os.geteuid() != 0:
         sys.exit("Run this as root:  sudo python3 mc_hub.py install")
     nologin = shutil.which("nologin") or "/usr/sbin/nologin"
@@ -244,15 +376,21 @@ def install() -> None:
     sh("sshd", "-t")
     if sh("systemctl", "reload", "ssh", check=False).returncode:
         sh("systemctl", "reload", "sshd")
-    if shutil.which("ufw") and "Status: active" in sh("ufw", "status").stdout:
-        sh("ufw", "allow", f"{MC_PORT}/tcp")
-        sh("ufw", "allow", f"{HUB_PORT}/tcp")
+    if firewall:
+        open_firewall()
+    else:
+        print(f"Firewall left unchanged. Friends need TCP {MC_PORT} (game) and {HUB_PORT} (invites) open.")
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     shutil.copy(__file__, INSTALL_DIR / "mc_hub.py")
+    # Sandboxed: may only write its own state and the two authorized_keys folders, capped CPU/RAM/threads.
     Path("/etc/systemd/system/mc-hub.service").write_text(
-        "[Unit]\nDescription=Minecraft manager hub\nAfter=network.target\n\n[Service]\n"
-        f"ExecStart=/usr/bin/python3 {INSTALL_DIR}/mc_hub.py serve\nRestart=always\n"
-        "MemoryMax=64M\n\n[Install]\nWantedBy=multi-user.target\n")
+        "[Unit]\nDescription=CraftShare hub (Minecraft invites)\nAfter=network.target\n\n[Service]\n"
+        f"ExecStart=/usr/bin/python3 {INSTALL_DIR}/mc_hub.py serve\nRestart=always\nRestartSec=3\n"
+        "MemoryMax=64M\nTasksMax=64\nCPUQuota=25%\n"
+        "NoNewPrivileges=yes\nPrivateTmp=yes\nProtectSystem=strict\nProtectHome=read-only\n"
+        f"ReadWritePaths={STATE_FILE.parent} /home/mctunnel/.ssh /home/mcsync/.ssh\n"
+        "\n[Install]\nWantedBy=multi-user.target\n")
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     sh("systemctl", "daemon-reload")
     sh("systemctl", "enable", "--now", "mc-hub")
     sh("systemctl", "restart", "mc-hub")
@@ -263,7 +401,6 @@ def install() -> None:
     else:
         print("\nYOUR OWNER CODE (paste it into the manager app, keep it private):\n")
         print("   " + owner_code(make_token()) + "\n")
-    print(f"If friends cannot connect, also open TCP {HUB_PORT} in your VPS provider's firewall panel.")
 
 
 def uninstall() -> None:
@@ -279,7 +416,13 @@ def uninstall() -> None:
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "serve"
     if cmd == "install":
-        install()
+        if "--firewall" in sys.argv:
+            fw = True
+        elif "--no-firewall" in sys.argv or not sys.stdin.isatty():
+            fw = False
+        else:
+            fw = input(f"Open TCP {MC_PORT} and {HUB_PORT} in this server's firewall? [y/N] ").strip().lower() in ("y", "yes")
+        install(fw)
     elif cmd == "uninstall":
         uninstall()
     elif cmd == "reset-token":
