@@ -39,7 +39,7 @@ def main() -> None:
             return r.status, data
 
     st = mc_hub.load()
-    st["admin"] = mc_hub.sha("secret")
+    st["admin"] = mc_hub.sha("test-secret-d0-not-use-in-production")
     st["public_ip"] = "203.0.113.5"
     mc_hub.save(st)
     for user, path in mc_hub.AUTH.items():          # pretend an old shared key already exists
@@ -65,15 +65,15 @@ def main() -> None:
         r = core.hub_call("127.0.0.1", PORT, "POST", "/enroll", {"code": code, "name": "bob", "pubkey": KEY}, fp=fp[:20])
         assert r["ok"] and r["ssh_user"] == "mctunnel"
         try:
-            core.hub_call("127.0.0.1", PORT, "GET", "/admin/friends", token="secret", fp="0" * 20)
+            core.hub_call("127.0.0.1", PORT, "GET", "/admin/friends", token="test-secret-d0-not-use-in-production", fp="0" * 20)
             raise AssertionError("wrong fingerprint accepted")
         except RuntimeError as e:
             assert "identity" in str(e)
 
         assert call("POST", "/enroll", {"code": code, "name": "bob2", "pubkey": KEY})[0] == 403, "invite is single use"
-        friends = call("GET", "/admin/friends", token="secret")[1]
+        friends = call("GET", "/admin/friends", token="test-secret-d0-not-use-in-production")[1]
         assert [f["name"] for f in friends["friends"]] == ["bob"] and friends["legacy"] == 2
-        assert call("POST", "/admin/remove", {"name": "bob"}, "secret")[0] == 200
+        assert call("POST", "/admin/remove", {"name": "bob"}, "test-secret-d0-not-use-in-production")[0] == 200
         assert "AAAAOLD" in mc_hub.AUTH["mcsync"].read_text(), "old keys must survive"
         assert "mc-hub:bob" not in mc_hub.AUTH["mctunnel"].read_text()
 
