@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/iamhelitha/craftshare/compare/v0.5.0...v0.6.0) (2026-10-18)
+
+
+### Features
+
+* **manager:** restore settings and player lists from backups, compatible with older backup formats ([06278e2](https://github.com/iamhelitha/craftshare/commit/06278e25e8cb012c715caeddc4f6bb8ae2cc35df))
+
+
+### Bug Fixes
+
+* **tests:** keep backups in separate seconds in the compatibility test ([a060093](https://github.com/iamhelitha/craftshare/commit/a060093dc98770bb8e2c2592383783ca0e91d00e))
+
 ## [0.5.0](https://github.com/iamhelitha/craftshare/compare/v0.4.0...v0.5.0) (2026-10-18)
 
 
