@@ -176,6 +176,74 @@ def usable_key(path: str) -> str:
     return str(copy)
 
 
+# ---------------------------------------------------------------- mc-hub (VPS invites)
+HUB_PORT = 8766
+HUB_FILE = DATA_DIR / "hub.json"        # owner code of the VPS hub; never shipped or committed
+
+
+def own_key() -> str:
+    """This PC's own SSH key (made on first use). The private half never leaves this PC."""
+    d = DATA_DIR / "identity"
+    key = d / "id_ed25519"
+    if not key.exists():
+        d.mkdir(parents=True, exist_ok=True)
+        tool = find_tool("ssh-keygen")
+        if not tool:
+            raise RuntimeError("ssh-keygen was not found (Windows: Settings > Optional features > OpenSSH Client)")
+        r = subprocess.run([tool, "-q", "-t", "ed25519", "-N", "", "-C", "mc-manager", "-f", str(key)],
+                           capture_output=True, text=True)
+        if r.returncode:
+            raise RuntimeError(f"Could not create a key: {r.stderr.strip()}")
+    return str(key)
+
+
+def split_hub(text: str) -> tuple[str, int, str]:
+    """'host[:port]/secret' -> (host, port, secret). Also accepts 'host secret'."""
+    text = text.strip()
+    m = re.fullmatch(r"([\w.\-]+)(?::(\d{1,5}))?[/\s]+(\S+)", text)
+    if not m:
+        raise ValueError("That does not look right. Expected something like  1.2.3.4:8766/CODE")
+    return m.group(1), int(m.group(2) or HUB_PORT), m.group(3)
+
+
+def hub_call(host: str, port: int, method: str, path: str, body: dict | None = None,
+             token: str = "", proxy: tuple[str, int] | None = None, timeout: float = 15) -> dict:
+    import http.client
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    try:
+        if proxy:
+            conn.sock = socks_connect(host, port, proxy, timeout=timeout)
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        conn.request(method, path, json.dumps(body).encode() if body is not None else None, headers)
+        resp = conn.getresponse()
+        try:
+            data = json.loads(resp.read() or b"{}")
+        except ValueError:
+            data = {}
+    except (OSError, http.client.HTTPException) as e:
+        raise RuntimeError(f"Could not reach the server at {host}:{port}. Is the address right, and is port "
+                           f"{port} open in the VPS firewall? ({e})") from None
+    finally:
+        conn.close()
+    if resp.status >= 400:
+        raise RuntimeError(data.get("error") or f"The server answered {resp.status}")
+    return data
+
+
+def load_hub() -> dict:
+    try:
+        return json.loads(HUB_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_hub(d: dict) -> None:
+    HUB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HUB_FILE.write_text(json.dumps(d), encoding="utf-8")
+
+
 # ---------------------------------------------------------------- Java
 def java_major(java: str = "java") -> int | None:
     """Return the installed Java major version, or None if not found."""

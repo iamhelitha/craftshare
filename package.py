@@ -1,7 +1,8 @@
 """Build the zip to send to a friend:  python package.py [--exe]
 
-The zip holds a top-level folder with the app (or the built .exe), the restricted tunnel and
-sync keys, and a defaults.json that pre-fills the VPS settings. It never includes your own
+The zip holds a top-level folder with the app (or the built .exe) and a minimal defaults.json. It
+contains no keys and no server address: friends join with an invite from the owner (Setup > Friends
+& access). `--with-keys` builds the old style zip with the shared keys. It never includes your own
 SSH key, your world, or your saved settings.
 """
 import json
@@ -37,7 +38,8 @@ KEYS = ["keys/friend_tunnel", "keys/sync_key"]   # the only private keys that ev
 
 
 def main() -> None:
-    if not DEFAULTS["ssh_host"]:
+    legacy = "--with-keys" in sys.argv       # old style: ship the shared keys (not recommended)
+    if legacy and not DEFAULTS["ssh_host"]:
         sys.exit("Set VPS_HOST in .env first (copy .env.example to .env).")
     use_exe = "--exe" in sys.argv
     files = [("dist/MinecraftManager.exe", "MinecraftManager.exe")] if use_exe else [(f, f) for f in SOURCE_FILES]
@@ -46,9 +48,12 @@ def main() -> None:
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for src, name in files:
             z.write(HERE / src, f"{TOP}/{name}")
-        for key in KEYS:
-            z.write(HERE / key, f"{TOP}/{key}")
-        z.writestr(f"{TOP}/defaults.json", json.dumps(DEFAULTS, indent=2))
+        if legacy:
+            for key in KEYS:
+                z.write(HERE / key, f"{TOP}/{key}")
+            z.writestr(f"{TOP}/defaults.json", json.dumps(DEFAULTS, indent=2))
+        else:                                # no secrets, no address: the friend joins with an invite
+            z.writestr(f"{TOP}/defaults.json", json.dumps({"version": DEFAULTS["version"]}, indent=2))
     print(f"Wrote {out} ({out.stat().st_size // 1024} KB)")
     for n in zipfile.ZipFile(out).namelist():
         print("  ", n)

@@ -18,3 +18,14 @@ Data (settings, world, backups, Java) lives in the folder shown on the Setup pag
 
 For the owner: `vps_setup.sh` (run once as root) creates the tunnel-only and storage-only VPS accounts.
 `python package.py` builds the friend zip; `build.bat` builds the .exe version.
+
+## Setting up the VPS (owner, once)
+
+Copy `hub/mc_hub.py` to the VPS and run it as root:
+
+    scp hub/mc_hub.py root@YOUR_VPS:/root/
+    ssh root@YOUR_VPS "python3 /root/mc_hub.py install"
+
+It prints an owner code. Paste it in the app under Setup > Friends & access > "I own the VPS". Then use
+"Invite a friend" and send the code; the friend pastes it in the same card ("Join a server"). If friends
+cannot connect, open TCP 8766 (and 25565) in your VPS provider's firewall.

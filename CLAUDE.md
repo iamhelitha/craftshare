@@ -39,3 +39,10 @@ A local web app (aiohttp backend + one static page) that downloads, configures a
 - `join.py` / `join.bat`: standalone join helper (stdlib + core only, no aiohttp, hosts nothing). Forwards localhost:25566 to the VPS through the configured or Windows-detected proxy, for playing on someone else's server from a throttled connection.
 - "Online" means reachable: `Manager.probe_loop` sends a real Minecraft status ping (`world.mc_ping`) to the public VPS address every ~2 s (through the proxy if set) and exposes it as `ready`. The log's `Done!` only proves the server started locally; the page shows 'Friends can join now' only when `ready`, and other people see 'starting' (not 'online') until it is. `status_loop` polls the lock every 5 s while a host exists, 15 s when idle.
 - Backups contain the world (including `world/players/{data,stats,advancements}` in 26.x) plus `_server/` copies of server.properties, ops, whitelist, bans, usercache.
+
+## Invites (mc-hub)
+
+- `hub/mc_hub.py` is a stdlib-only service for the VPS (port 8766, systemd `mc-hub`, ~20 MB). `install` creates `mctunnel`/`mcsync`, GatewayPorts, ufw rules, the service, and prints the owner code `host:port/token`. State is `/etc/mc-hub/state.json`. `MC_HUB_ROOT`/`MC_HUB_PORT` redirect it for tests (use `cygpath -m` paths on Windows).
+- Friend flow (`/api/hub/join`): the app makes its own ed25519 key (`core.own_key`, `DATA_DIR/identity`), sends only the public key + a one-time 24 h invite code to `/enroll`; the hub appends it to both `authorized_keys` tagged `mc-hub:<name>`. Lines without that tag (the old shared keys) are never touched, only removed explicitly via `/admin/remove-legacy`.
+- Owner flow: the owner code is stored in `DATA_DIR/hub.json` (never committed); Setup > Friends & access creates invites and removes friends.
+- Secrets policy: no keys or server address in the repo or the friend zip (`package.py` default); `.env` (gitignored) holds `VPS_HOST` for the legacy `--with-keys` zip only.

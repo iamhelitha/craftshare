@@ -335,6 +335,27 @@ details summary { cursor: pointer; font-weight: 600; }
           <label class="switch"><input type="checkbox" id="cfg-sync_enabled"><span></span></label>
         </div>
       </div>
+      <div class="card" id="accessCard">
+        <h2>Friends &amp; access</h2>
+        <div id="joinBox">
+          <div class="label">Join a server</div>
+          <div class="help">Got an invite from the server owner? Paste it here. This PC makes its own key; nothing secret is sent or shared.</div>
+          <div class="row" style="margin-top:8px"><input type="text" id="inviteIn" placeholder="e.g. 1.2.3.4:8766/ABCD-EFGH-JKLM"><button class="btn primary" id="btnJoin">Join</button></div>
+          <div class="small muted" id="joinDone" style="margin-top:6px"></div>
+        </div>
+        <details id="ownerBox" style="margin-top:14px">
+          <summary>I own the VPS (invite friends)</summary>
+          <div id="ownerConnect">
+            <p class="small muted">Run the one-time install on your VPS, then paste the owner code it prints here.</p>
+            <div class="row"><input type="text" id="ownerIn" placeholder="owner code, e.g. 1.2.3.4:8766/xxxxxxxx"><button class="btn" id="btnOwner">Connect</button></div>
+          </div>
+          <div id="ownerPanel" class="hidden">
+            <div class="row" style="margin:10px 0"><button class="btn primary" id="btnInvite">Invite a friend</button><span class="small muted" id="hubErr"></span></div>
+            <div class="banner info hidden" id="inviteOut"></div>
+            <div id="friendList"></div>
+          </div>
+        </details>
+      </div>
       <div class="card">
         <h2>Minecraft</h2>
         <div class="field">
@@ -758,6 +779,7 @@ async function loadSetup() {
     const i = row.querySelector("input"); i.id = "cfg-" + k; i.value = cfg[k] || "";
     cf.appendChild(row);
   }
+  loadHub();
   try {
     const v = await api("versions"); const sel = $("#versionSelect"); sel.innerHTML = "";
     for (const ver of v.versions) { const o = document.createElement("option"); o.value = ver;
@@ -781,6 +803,41 @@ $("#btnInstallVersion").onclick = async () => {
 };
 $("#btnJava").onclick = async () => { await api("java/install", {}); location.hash = "#home"; };
 $("#btnOpenData").onclick = () => api("open-folder", {});
+/* ---------------- friends & access ---------------- */
+async function loadHub() {
+  const h = await api("hub").catch(() => null); if (!h) return;
+  $("#ownerConnect").classList.toggle("hidden", h.owner);
+  $("#ownerPanel").classList.toggle("hidden", !h.owner);
+  $("#hubErr").textContent = h.error || "";
+  const box = $("#friendList"); box.innerHTML = "";
+  const addRow = (label, sub, onRemove) => {
+    const r = document.createElement("div"); r.className = "field";
+    r.innerHTML = `<div><div class="label"></div><div class="help"></div></div><button class="btn sm danger">Remove</button>`;
+    r.querySelector(".label").textContent = label; r.querySelector(".help").textContent = sub;
+    r.querySelector("button").onclick = onRemove; box.appendChild(r);
+  };
+  for (const f of h.friends) addRow(f.name, "Added " + new Date(f.added * 1000).toLocaleDateString(), async () => {
+    if (!await confirmDo(`Remove ${f.name}? They can no longer host or load the world.`, "Remove", true)) return;
+    await api("hub/remove", { name: f.name }); loadHub(); });
+  if (h.legacy) addRow("Old shared keys (" + h.legacy + ")", "From the first setup. Remove them once everyone has joined with an invite.", async () => {
+    if (!await confirmDo("Remove the old shared keys? Anyone still using the zip with keys inside stops working until they join with an invite.", "Remove", true)) return;
+    await api("hub/remove", { legacy: true }); loadHub(); });
+  $("#joinDone").textContent = cfg.ssh_key && cfg.sync_enabled && cfg.ssh_host ? "This PC is connected to " + cfg.ssh_host + "." : "";
+}
+$("#btnJoin").onclick = async () => {
+  const name = $("#cfg-player_name").value.trim();
+  if (!name) return toast("Type your name above first (the 'Your name' box).", "error");
+  await api("hub/join", { invite: $("#inviteIn").value, name }); $("#inviteIn").value = "";
+  toast("Connected! You can host now.", "success"); loadSetup();
+};
+$("#btnOwner").onclick = async () => { await api("hub/owner", { code: $("#ownerIn").value }); $("#ownerIn").value = ""; toast("Connected as owner", "success"); loadSetup(); };
+$("#btnInvite").onclick = async () => {
+  const r = await api("hub/invite", {}); const o = $("#inviteOut"); o.classList.remove("hidden");
+  o.innerHTML = `Send this to your friend (works once, for 24 hours):<br><code></code> <button class="btn sm">Copy</button>`;
+  o.querySelector("code").textContent = r.text;
+  o.querySelector("button").onclick = () => { navigator.clipboard.writeText(r.text); toast("Copied", "success"); };
+};
+
 loaders.setup = loadSetup;
 
 $("#shutdownLink").onclick = async e => {
