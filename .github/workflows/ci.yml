@@ -22,6 +22,6 @@ jobs:
       - name: No private keys in the tree
         run: "! git grep -nE 'BEGIN (OPENSSH|RSA|EC) PRIVATE KEY'"
       - name: Secret scan (full history)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
