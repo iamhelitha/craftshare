@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/iamhelitha/craftshare/compare/v0.3.1...v0.3.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **hub:** keep CAP_DAC_OVERRIDE so the service can read the key files; answer 500 instead of hanging up; record firewall rules at once ([53d7fe5](https://github.com/iamhelitha/craftshare/commit/53d7fe5a7d72360e377323ace63dd69a253070b7))
+
 ## [0.3.1](https://github.com/iamhelitha/craftshare/compare/v0.3.0...v0.3.1) (2026-10-18)
 
 
