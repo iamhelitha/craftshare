@@ -74,6 +74,13 @@ def main() -> None:
         assert call("POST", "/enroll", {"code": code, "name": "bob2", "pubkey": KEY})[0] == 403, "invite is single use"
         friends = call("GET", "/admin/friends", token=ADMIN)[1]
         assert [f["name"] for f in friends["friends"]] == ["bob"] and friends["legacy"] == 2
+        # the owner's own PC: add-key needs the owner token, is idempotent, and refuses a name clash
+        assert call("POST", "/admin/add-key", {"name": "me", "pubkey": KEY})[0] == 403
+        assert call("POST", "/admin/add-key", {"name": "me", "pubkey": KEY}, ADMIN)[0] == 200
+        assert call("POST", "/admin/add-key", {"name": "me", "pubkey": KEY}, ADMIN)[0] == 200
+        assert call("POST", "/admin/add-key", {"name": "me", "pubkey": "ssh-ed25519 " + "B" * 68}, ADMIN)[0] == 409
+        assert call("POST", "/admin/add-key", {"name": "x y", "pubkey": KEY}, ADMIN)[0] == 400
+        assert call("POST", "/admin/remove", {"name": "me"}, ADMIN)[0] == 200
         assert call("POST", "/admin/remove", {"name": "bob"}, ADMIN)[0] == 200
         assert "AAAAOLD" in mc_hub.AUTH["mcsync"].read_text(), "old keys must survive"
         assert "mc-hub:bob" not in mc_hub.AUTH["mctunnel"].read_text()

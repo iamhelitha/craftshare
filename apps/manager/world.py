@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import struct
@@ -368,6 +369,56 @@ def release_lock(cfg: dict, my_id: str, force: bool = False) -> None:
         if cur is not None and cur.get("id") != my_id and not force:
             raise SyncError("The lock now belongs to someone else; not releasing it.")
         r.run(["-rm lock/lock.json", "-rm lock/heartbeat.json", "rmdir lock"])
+
+
+_LS_RE = re.compile(r"^\S+\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\w{3}\s+\d+\s+[\d:]+)\s+(world-(\d+)\.zip)\s*$")
+
+
+def list_remote_worlds(cfg: dict) -> list[dict]:
+    """Every world version stored on the VPS: [{name, version, size, date, latest}], newest first."""
+    with _Remote(cfg) as r:
+        meta = r.get_json("meta.json") or {}
+        res = r.run(["ls -l"])
+        if res.returncode != 0:
+            raise SyncError(f"Cannot list the shared storage: {_err(res)}")
+    latest = meta.get("file", "")
+    out = []
+    for line in res.stdout.splitlines():
+        m = _LS_RE.match(line.strip())
+        if m:
+            out.append({"name": m.group(3), "version": int(m.group(4)), "size": int(m.group(1)),
+                        "date": m.group(2), "latest": m.group(3) == latest,
+                        "by": meta.get("by", "") if m.group(3) == latest else ""})
+    return sorted(out, key=lambda x: -x["version"])
+
+
+def download_remote_world(cfg: dict, name: str, progress=lambda msg: None) -> Path:
+    """Copy one VPS version into the local backups folder (it does not change the current world)."""
+    if not re.fullmatch(r"world-\d+\.zip", name):
+        raise SyncError("Bad file name.")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    dest = BACKUP_DIR / f"vps-{name[:-4]}-{time.strftime('%Y%m%d-%H%M%S')}.zip"
+    with _Remote(cfg) as r:
+        progress(f"Downloading {name} from the VPS...")
+        part = r.tmp / name
+        res = r.run([f"get {name} {_q(part)}"])
+        if res.returncode != 0 or not part.exists():
+            raise SyncError(f"Download failed: {_err(res)}")
+        shutil.move(str(part), dest)
+    return dest
+
+
+def delete_remote_world(cfg: dict, name: str) -> None:
+    """Delete an old version on the VPS. The newest one (listed in meta.json) is never deleted."""
+    if not re.fullmatch(r"world-\d+\.zip", name):
+        raise SyncError("Bad file name.")
+    with _Remote(cfg) as r:
+        meta = r.get_json("meta.json") or {}
+        if meta.get("file") == name:
+            raise SyncError("That is the current shared world. Upload a newer one first, or restore a backup instead.")
+        res = r.run([f"rm {name}"])
+        if res.returncode != 0:
+            raise SyncError(f"Delete failed: {_err(res)}")
 
 
 def read_policy(cfg: dict) -> dict:

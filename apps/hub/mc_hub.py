@@ -393,6 +393,17 @@ class Handler(BaseHTTPRequestHandler):
             st["invites"][sha(code)] = {"exp": time.time() + INVITE_TTL}
             save(st)
             return self.reply(200, {"code": code, "expires_in": INVITE_TTL})
+        if self.path == "/admin/add-key":           # the owner's own PC (no invite needed: the owner token is the proof)
+            name, key = str(b.get("name", "")).strip(), " ".join(str(b.get("pubkey", "")).split()[:2])
+            if not NAME_RE.fullmatch(name) or not KEY_RE.fullmatch(key):
+                return self.reply(400, {"error": "Bad name or key."})
+            if name in st["friends"] and st["friends"][name]["key"] != key:
+                return self.reply(409, {"error": f"The name '{name}' is already used by another key."})
+            st["friends"].setdefault(name, {"key": key, "added": int(time.time())})
+            save(st)
+            write_keys(st)
+            return self.reply(200, {"ok": True, "ssh_user": "mctunnel", "sync_user": "mcsync", "ssh_port": 22,
+                                    "remote_port": MC_PORT, "hub": HUB_VERSION})
         if self.path == "/admin/remove":
             name = str(b.get("name", ""))
             if name not in st["friends"]:

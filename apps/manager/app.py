@@ -809,8 +809,22 @@ def make_app(mgr: Manager, token: str) -> web.Application:
         except (ValueError, RuntimeError) as e:
             return fail(str(e))
         core.save_hub({"host": host, "port": port, "token": token, "fp": fp})
-        if not mgr.cfg["ssh_host"]:
-            mgr.save_config({"ssh_host": host})
+        # The owner's PC also needs its own key (no shared files), so it can reach the shared world.
+        name = re.sub(r"[^A-Za-z0-9_-]", "", mgr.cfg["player_name"])[:24] or "owner"
+        try:
+            key = await asyncio.to_thread(core.own_key)
+            pub = Path(key + ".pub").read_text().strip()
+            r = await asyncio.to_thread(core.hub_call, host, port, "POST", "/admin/add-key",
+                                        {"name": name, "pubkey": pub}, token, hub_proxy(), 15, fp)
+            mgr.save_config({"ssh_host": host, "ssh_user": r["ssh_user"], "ssh_port": str(r["ssh_port"]),
+                             "ssh_remote_port": str(r["remote_port"]), "ssh_key": key,
+                             "sync_user": r["sync_user"], "sync_key": key, "sync_enabled": True,
+                             "player_name": mgr.cfg["player_name"] or name})
+        except RuntimeError as e:
+            msg = str(e)
+            hint = (" Your VPS hub is older than this app: run  mc-hub update  on the VPS, then connect again."
+                    if "Not found" in msg else "")
+            return fail(f"Connected as owner, but this PC could not get access to the shared storage: {msg}.{hint}")
         return ok()
 
     @routes.post("/api/hub/invite")
@@ -917,11 +931,39 @@ def make_app(mgr: Manager, token: str) -> web.Application:
                 remote = await asyncio.to_thread(world.check_remote, mgr.cfg)
             except Exception as e:
                 remote = {"error": str(e)}
+        remote_files = []
+        if remote and "error" not in remote:
+            try:
+                remote_files = await asyncio.to_thread(world.list_remote_worlds, mgr.cfg)
+            except Exception as e:
+                remote = {**remote, "list_error": str(e)}
         items = _backups()
-        return web.json_response({"backups": items, "remote": remote, "dir": str(core.BACKUP_DIR),
+        return web.json_response({"backups": items, "remote": remote, "remote_files": remote_files,
+                                  "dir": str(core.BACKUP_DIR),
                                   "total": sum(b["size"] for b in items), "keep": mgr.cfg["backup_keep"],
                                   "max_gb": mgr.cfg["backup_max_gb"],
                                   "has_world": world.has_world(), "running": mgr.server.running})
+
+    @routes.post("/api/backups/remote/download")
+    async def remote_download(request):
+        name = str((await body(request)).get("name", ""))
+        if not mgr.sync_on():
+            return fail("The shared world is not set up on this PC.")
+
+        async def go():
+            dest = await asyncio.to_thread(world.download_remote_world, mgr.cfg, name, mgr._step_cb)
+            mgr.note(f"Saved in your backups: {dest.name}. Use Restore to play it.", "success")
+        mgr.run_task("Downloading from the VPS", go())
+        return ok()
+
+    @routes.post("/api/backups/remote/delete")
+    async def remote_delete(request):
+        name = str((await body(request)).get("name", ""))
+        try:
+            await asyncio.to_thread(world.delete_remote_world, mgr.cfg, name)
+        except world.SyncError as e:
+            return fail(str(e))
+        return ok()
 
     @routes.post("/api/backups/retention")
     async def backup_retention(request):

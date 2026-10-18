@@ -257,25 +257,28 @@ details summary { cursor: pointer; font-weight: 600; }
     <section id="page-backups" class="hidden">
       <h1>Backups</h1>
       <p class="sub">A backup is made automatically every time the server starts. Each one holds the whole world, every player's inventory, stats and progress, and the admin, whitelist and ban lists.</p>
-      <div class="card">
-        <h2>Storage</h2>
-        <div class="row" style="gap:18px">
-          <div><div class="stat" id="bkUsed">0 MB</div><div class="small muted" id="bkLimitText"></div></div>
-          <div class="progress" id="bkBar" style="flex:1;min-width:160px;max-width:420px;margin-top:0"><div></div></div>
+      <div class="grid2" style="align-items:start;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))">
+        <div class="card">
+          <h2>Storage</h2>
+          <div class="row" style="gap:14px;align-items:center">
+            <div style="white-space:nowrap"><span class="stat" id="bkUsed">0 MB</span>
+              <div class="small muted" id="bkLimitText"></div></div>
+            <div class="progress" id="bkBar" style="flex:1;min-width:80px;margin-top:0"><div></div></div>
+          </div>
+          <div class="grid2" style="margin-top:14px;gap:12px">
+            <label><div class="label small">Automatic backups to keep</div>
+              <select id="bkKeep"><option>3</option><option>5</option><option>10</option><option>20</option><option>50</option></select></label>
+            <label><div class="label small">Space limit</div>
+              <select id="bkMax"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option><option value="50">50 GB</option></select></label>
+          </div>
+          <p class="small muted" style="margin:10px 0 0">One automatic backup per server start; the oldest go first when over the limit. "Back up now" copies and identical copies are never deleted or duplicated.</p>
         </div>
-        <div class="field" style="margin-top:8px">
-          <div><div class="label">Automatic backups to keep</div><div class="help">One is made every time the server starts.</div></div>
-          <select id="bkKeep" style="max-width:160px"><option>3</option><option>5</option><option>10</option><option>20</option><option>50</option></select>
+        <div class="card" id="sharedCard">
+          <h2>Shared world on the VPS</h2>
+          <div id="sharedInfo" class="muted">Loading...</div>
+          <table class="hidden" id="remoteTable" style="margin-top:10px"><thead><tr><th>Version</th><th>Saved</th><th>Size</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="remoteRows"></tbody></table>
         </div>
-        <div class="field">
-          <div><div class="label">Space limit</div><div class="help">When backups use more than this, the oldest automatic ones are deleted.</div></div>
-          <select id="bkMax" style="max-width:160px"><option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option><option value="50">50 GB</option></select>
-        </div>
-        <p class="small muted" style="margin:6px 0 0">Backups you make with "Back up now" are never deleted automatically. Identical copies are skipped.</p>
-      </div>
-      <div class="card" id="sharedCard">
-        <h2>Shared world</h2>
-        <div id="sharedInfo" class="muted">Loading...</div>
       </div>
       <div class="card">
         <div class="row spread" style="margin-bottom:12px">
@@ -726,12 +729,32 @@ async function loadBackups() {
   setSelect("#bkKeep", r.keep); setSelect("#bkMax", String(parseFloat(r.max_gb)));
   const si = $("#sharedInfo"), rem = r.remote;
   $("#sharedCard").classList.toggle("hidden", !S.sync);
+  const rb = $("#remoteRows"); rb.innerHTML = "";
+  $("#remoteTable").classList.toggle("hidden", !(r.remote_files && r.remote_files.length));
+  for (const f of r.remote_files || []) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td></td><td class="muted"></td><td class="muted"></td><td style="text-align:right"><div class="row" style="justify-content:flex-end">
+      <button class="btn sm get">Download</button><button class="btn sm ghost-danger del">Delete</button></div></td>`;
+    tr.children[0].innerHTML = `v${f.version}` + (f.latest ? ' <span class="small" style="color:var(--accent)">current</span>' : "");
+    tr.children[1].textContent = f.date + (f.by ? " · " + f.by : ""); tr.children[2].textContent = fmtSize(f.size);
+    for (const td of tr.children) td.style.whiteSpace = "nowrap";
+    tr.querySelector(".get").onclick = async () => { await api("backups/remote/download", { name: f.name }); toast("Downloading from the VPS...");
+      const t = setInterval(() => { if (!S.busy) { clearInterval(t); loadBackups(); } }, 1500); };
+    const del = tr.querySelector(".del");
+    if (f.latest) { del.disabled = true; del.title = "The current shared world cannot be deleted here"; }
+    del.onclick = async () => {
+      if (await confirmDo(`Delete version ${f.version} (${fmtSize(f.size)}) from the VPS? This cannot be undone.`, "Delete", true))
+        { await api("backups/remote/delete", { name: f.name }); loadBackups(); }
+    };
+    rb.appendChild(tr);
+  }
   if (!rem) si.textContent = "";
   else if (rem.error) si.textContent = "Can't reach the shared storage: " + rem.error;
+  else if (rem.exists && rem.list_error) si.textContent = "Could not list the versions: " + rem.list_error;
   else if (!rem.exists) si.textContent = "No shared world yet. The first time someone stops hosting, their world is saved here.";
-  else si.innerHTML = `Latest: <b>version ${rem.remote_version}</b>, saved by <b></b> ${since(rem.time)}.<br>
-     <span class="small">This PC has version ${rem.local_version || "none"}${rem.newer ? " — you will be offered the newer one when you start." : " — up to date."}</span>`,
-    si.querySelector("b:nth-of-type(2)").textContent = rem.by;
+  else { si.innerHTML = `Latest: <b>version ${rem.remote_version}</b>, saved by <b></b> ${since(rem.time)}.<br>
+     <span class="small">This PC has version ${rem.local_version || "none"}${rem.newer ? " — you will be offered the newer one when you start." : " — up to date."}</span>`;
+    si.querySelector("b:nth-of-type(2)").textContent = rem.by; }
 }
 function setSelect(sel, v) {
   const s = $(sel);

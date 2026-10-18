@@ -61,3 +61,8 @@ A local web app (aiohttp backend + one static page) that downloads, configures a
 - The new backend calls `updater.confirm()` once serving (marker -> `ok`, deletes leftover `.failed.exe`/`.new.exe`). If the launcher sees its backend exit while the marker is still `pending` for its own version, it rolls back (`roll_back`: current -> `.failed.exe`, `.old.exe` -> current) and starts the old exe. Manual "Go back" uses the same `roll_back`.
 - Gotcha: any other copy of a one-file PyInstaller exe must be started with `updater.clean_env()` (drops `_PYI_*`/`_MEIPASS2`, sets `PYINSTALLER_RESET_ENVIRONMENT=1`); otherwise it reuses the parent's unpack folder, which disappears when the parent exits.
 - Hosting gate: `host_flow` reads `policy.json` from the world store (`world.read_policy`, written by `mc-hub require-app`) and refuses to host below `min_app`.
+
+## Owner access and VPS world versions
+
+- Owner connect (`/api/hub/owner`) also makes this PC's own key and registers it through the hub's `/admin/add-key` (owner token = proof, idempotent, name clash -> 409), then fills the sync settings like a join does. An older hub answers 'Not found'; the app tells the owner to run `mc-hub update`. Without this a fresh install had the owner code but no access to the shared storage.
+- Backups page: `/api/backups` also returns `remote_files` (`world.list_remote_worlds`: parses sftp `ls -l`, marks the version in `meta.json` as current). Download copies a version into the local backups folder as `vps-world-N-<time>.zip` (restore from there); Delete removes an old version but never the current one.
